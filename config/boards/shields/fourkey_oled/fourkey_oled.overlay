@@ -74,7 +74,9 @@
     status = "okay";
 
     oled: ssd1306@3c {
-        compatible = "solomon,ssd1306fb-i2c";
+        /* Zephyr 4.1：I2C/SPI 变体合并，compatible 统一为 solomon,ssd1306fb，
+           总线由节点所在总线自动识别（旧写法 ssd1306fb-i2c 已无绑定匹配） */
+        compatible = "solomon,ssd1306fb";
         reg = <0x3c>;
         width = <128>;
         height = <64>;          /* 128x32 模块：改 <32> 并把 multiplex-ratio 改 <31> */

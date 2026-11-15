@@ -18,6 +18,11 @@
 #include <dt-bindings/zmk/keys.h>
 
 / {
+    chosen {
+        /* ZMK 现行要求：显式声明显示设备，状态屏组件据此取屏 */
+        zmk,display = &oled;
+    };
+
     fourkey_kscan {
         compatible = "zmk,kscan-gpio-direct";
         input-gpios =

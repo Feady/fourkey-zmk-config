@@ -4,3 +4,28 @@ config ZMK_KEYBOARD_NAME
     default "FourKey OLED"
 
 endif # SHIELD_FOURKEY_OLED
+
+# ---- 显示：与 ZMK 官方 SSD1306 shield（corne / lily58 / nibble / nice_view）
+# 的 Kconfig.defconfig 完全一致 ----
+# 这段是必须的：Zephyr 4.1 LVGL 端口默认 LV_Z_BITS_PER_PIXEL=32、
+# LV_Z_VDB_SIZE=10，对 1-bit 单色屏会造成转换缓冲/帧缓冲不匹配，
+# 表现为显示初始化后满屏雪花（display_write 数据未正确写入）甚至硬死。
+if LVGL
+
+config LV_Z_VDB_SIZE
+    default 64
+
+config LV_DPI_DEF
+    default 148
+
+config LV_Z_BITS_PER_PIXEL
+    default 1
+
+config LV_Z_MEM_POOL_SIZE
+    default 5120 if ZMK_DISPLAY_STATUS_SCREEN_BUILT_IN
+
+choice LV_COLOR_DEPTH
+    default LV_COLOR_DEPTH_1
+endchoice
+
+endif # LVGL

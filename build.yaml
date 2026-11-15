@@ -1,0 +1,20 @@
+# This file generates the GitHub Actions matrix
+# For simple board + shield combinations, add them
+# to the top level board and shield arrays, for more
+# control, add individual board + shield combinations to
+# the `include` property, e.g:
+#
+# board: [ "nice_nano_v2" ]
+# shield: [ "corne_left", "corne_right" ]
+# include:
+#   - board: bdn9_rev2
+#   - board: nice_nano_v2
+#     shield: reviung41
+#
+# 注意：ZMK main（Zephyr 4.1 / HWMv2）下，板名必须带 zmk 变体（//zmk），
+# 否则 CONFIG_ZMK_USB / CONFIG_SETTINGS_NVS 等板级默认不会启用（见
+# zmk 博客 2025-12-09-zephyr-4-1.md 的 ZMK Board Variant 一节）。
+---
+include:
+  - board: nice_nano@2.0.0//zmk
+    shield: fourkey_oled

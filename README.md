@@ -32,8 +32,8 @@
 1. 在 GitHub 新建仓库（如 `zmk-config`），把本目录内容按以下结构上传：
    ```text
    zmk-config/
-   ├── build.yaml            ← 本目录的 build.yaml
-   └── config/               ← 本目录的 config/ 整个目录
+   ├── .github/workflows/build.yml   ← 编译流水线（必须在 .github/workflows/ 下，GitHub 只认这个目录）
+   └── config/
        ├── west.yml
        ├── fourkey_oled.conf
        └── boards/shields/fourkey_oled/

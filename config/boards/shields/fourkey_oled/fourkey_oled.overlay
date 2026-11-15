@@ -1,0 +1,53 @@
+/*
+ * fourkey_oled - Rev E 4 键直连蓝牙键盘 + SSD1306 OLED
+ *
+ * GPIO 与用户原理图第三轮（原理图_用户草稿_第三轮.png）一致：
+ *   K1 = P1.04 = J1-12 = D8   按下 → GND（内部上拉）
+ *   K2 = P0.24 = J1-9  = D5   按下 → GND  ★ SuperMini 克隆板若占用 P0.24，需换 P0.22
+ *   K3 = P0.11 = J1-11 = D7   按下 → GND
+ *   K4 = P1.00 = J1-10 = D6   按下 → GND
+ *
+ * 位置索引 = input-gpios 顺序：0=K1, 1=K2, 2=K3, 3=K4，
+ * 与 fourkey_oled.keymap 的第 1~4 个 binding 一一对应。
+ *
+ * OLED：SSD1306 I2C 0x3C，SDA = D2/P0.17，SCL = D3/P0.20
+ * （= nice!nano / SuperMini 的 &pro_micro_i2c 默认引脚）。
+ */
+
+#include <dt-bindings/zmk/bt.h>
+#include <dt-bindings/zmk/keys.h>
+
+/ {
+    fourkey_kscan {
+        compatible = "zmk,kscan-gpio-direct";
+        input-gpios =
+            <&pro_micro 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
+            <&pro_micro 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
+            <&pro_micro 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
+            <&pro_micro 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+        /* 机械按键消抖：按下 20 ms / 释放 25 ms，按实际手感可调 */
+        debounce-pressed-ms = <20>;
+        debounce-released-ms = <25>;
+        /* 电池开关 OFF 时用 &soft_off 关机后，按任意键唤醒 */
+        wakeup-source;
+    };
+};
+
+&pro_micro_i2c {
+    status = "okay";
+
+    oled: ssd1306@3c {
+        compatible = "solomon,ssd1306fb-i2c";
+        reg = <0x3c>;
+        width = <128>;
+        height = <64>;          /* 128x32 模块：改 <32> 并把 multiplex-ratio 改 <31> */
+        segment-offset = <0>;
+        page-offset = <0>;
+        display-offset = <0>;
+        multiplex-ratio = <63>; /* 128x32 模块改 <31> */
+        segment-remap;          /* 模块若左右镜像，删掉本行再试 */
+        com-invdir;             /* 128x32 模块一般改 com-sequential */
+        prechargep = <0x22>;
+        contrast = <255>;
+    };
+};

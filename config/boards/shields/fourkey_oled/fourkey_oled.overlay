@@ -1,13 +1,13 @@
 /*
  * fourkey_oled - Rev E 4 键直连蓝牙键盘 + SSD1306 OLED
  *
- * GPIO 与用户原理图第三轮（原理图_用户草稿_第三轮.png）一致：
- *   K1 = P1.04 = J1-12 = D8   按下 → GND（内部上拉）
- *   K2 = P0.24 = J1-9  = D5   按下 → GND  ★ SuperMini 克隆板若占用 P0.24，需换 P0.22
- *   K3 = P0.11 = J1-11 = D7   按下 → GND
- *   K4 = P1.00 = J1-10 = D6   按下 → GND
+ * GPIO 按用户最终 PCB 物理接线（用户 2026-11-15 实测确认）：
+ *   key1 = P1.06 = J1-12 = D9   按下 → GND（内部上拉）
+ *   key2 = P1.00 = J1-9  = D6   按下 → GND
+ *   key3 = P1.04 = J1-11 = D8   按下 → GND
+ *   key4 = P0.11 = J1-10 = D7   按下 → GND
  *
- * 位置索引 = input-gpios 顺序：0=K1, 1=K2, 2=K3, 3=K4，
+ * 位置索引 = input-gpios 顺序：0=key1, 1=key2, 2=key3, 3=key4，
  * 与 fourkey_oled.keymap 的第 1~4 个 binding 一一对应。
  * （ZMK main 引入 physical layouts 体系后，需 physical_layout 节点 + 矩阵变换
  *   才能确定 keymap 尺寸，本文件按官方 hardware-integration/physical-layouts.md 写法。）
@@ -57,10 +57,10 @@
     fourkey_kscan: fourkey_kscan {
         compatible = "zmk,kscan-gpio-direct";
         input-gpios =
+            <&pro_micro 9 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
+            <&pro_micro 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
             <&pro_micro 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
-            <&pro_micro 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
-            <&pro_micro 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,
-            <&pro_micro 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+            <&pro_micro 7 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
         /* 机械按键消抖：按下 20 ms / 释放 25 ms，按实际手感可调
            属性名见 zmk,kscan-gpio-direct 绑定：debounce-press-ms / debounce-release-ms */
         debounce-press-ms = <20>;

@@ -52,7 +52,8 @@
             ;
     };
 
-    fourkey_kscan {
+    /* 标签 + 节点名：&fourkey_kscan 引用标签 */
+    fourkey_kscan: fourkey_kscan {
         compatible = "zmk,kscan-gpio-direct";
         input-gpios =
             <&pro_micro 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>,

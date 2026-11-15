@@ -22,7 +22,7 @@
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/bt.h>
-#include <dt-bindings/zmk/layers.h>
+/* dt-bindings/zmk/layers.h 已从 ZMK main 移除（层直接用层号/层名引用） */
 
 / {
     keymap {

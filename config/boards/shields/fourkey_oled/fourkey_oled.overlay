@@ -90,3 +90,8 @@
         /* contrast 不在 Zephyr 4.1 绑定中（DT 校验会报错），默认对比度即可 */
     };
 };
+
+/* [B2 诊断] 临时禁用 OLED 节点，避免 I2C 传输挂起阻塞启动 */
+&oled {
+    status = "disabled";
+};

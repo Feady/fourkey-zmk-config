@@ -107,21 +107,24 @@
 &pro_micro_i2c {
     status = "okay";
 
-    oled: ssd1306@3c {
-        /* Zephyr 4.1：I2C/SPI 变体合并，compatible 统一为 solomon,ssd1306fb，
-           总线由节点所在总线自动识别（旧写法 ssd1306fb-i2c 已无绑定匹配） */
-        compatible = "solomon,ssd1306fb";
+    oled: sh1106@3c {
+        /* SH1106 与 SSD1306 指令集近似但**不支持水平寻址**：SSD1306 驱动的
+           水平寻址数据写入会落到错误位置 → 全屏乱码（B1/B17 现象）。
+           compatible 换成 sinowealth,sh1106 后，同一驱动自动切换为
+           页寻址逐页写（ssd1306_write_sh1106 路径），并改用 DCDC 供电。
+           若屏其实是 SSD1315（真兼容 SSD1306），此写法会黑屏 → 换回
+           solomon,ssd1306fb 即可区分。 */
+        compatible = "sinowealth,sh1106";
         reg = <0x3c>;
         width = <128>;
-        height = <64>;          /* 128x32 模块：改 <32> 并把 multiplex-ratio 改 <31> */
-        segment-offset = <0>;
+        height = <64>;
+        segment-offset = <2>;   /* SH1106 GDDRAM 132 列，128 像素居中需 +2 */
         page-offset = <0>;
         display-offset = <0>;
-        multiplex-ratio = <63>; /* 128x32 模块改 <31> */
-        segment-remap;          /* 模块若左右镜像，删掉本行再试 */
-        com-invdir;             /* 128x32 模块一般改 com-sequential */
+        multiplex-ratio = <63>;
+        segment-remap;          /* 若画面左右镜像，删掉本行再试 */
+        com-invdir;             /* 若画面上下颠倒，改用 com-sequential 再试 */
         prechargep = <0x22>;
-        /* contrast 不在 Zephyr 4.1 绑定中（DT 校验会报错），默认对比度即可 */
     };
 };
 

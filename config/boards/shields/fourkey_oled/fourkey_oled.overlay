@@ -29,17 +29,20 @@
         zmk,display = &oled;
     };
 
-    /* 矩阵变换：直连 kscan 无行列，用虚拟 1 行 × 4 列，位置 0..3 = K1..K4 */
+    /* 矩阵变换：直连 kscan 无行列，用虚拟 2 行 × 2 列对应 2×2 实物排布
+       位置顺序（先第一排后第二排，从左到右）：
+       0=K1 左上  1=K2 右上  2=K3 左下  3=K4 右下 */
     default_transform: keymap_transform_0 {
         compatible = "zmk,matrix-transform";
-        columns = <4>;
-        rows = <1>;
+        columns = <2>;
+        rows = <2>;
         map = <
-            RC(0,0) RC(0,1) RC(0,2) RC(0,3)
+            RC(0,0) RC(0,1)
+            RC(1,0) RC(1,1)
         >;
     };
 
-    /* 物理布局：4 键一行，keys 属性为 ZMK Studio 可选支持 */
+    /* 物理布局：2×2 键阵（坐标单位约 1u），keys 属性为 ZMK Studio 可选支持 */
     physical_layout0: physical_layout_0 {
         compatible = "zmk,physical-layout";
         display-name = "Default";
@@ -48,8 +51,8 @@
         keys  //                     w   h    x    y     rot    rx    ry
             = <&key_physical_attrs 100 100    0    0       0     0     0>
             , <&key_physical_attrs 100 100  100    0       0     0     0>
-            , <&key_physical_attrs 100 100  200    0       0     0     0>
-            , <&key_physical_attrs 100 100  300    0       0     0     0>
+            , <&key_physical_attrs 100 100    0  100       0     0     0>
+            , <&key_physical_attrs 100 100  100  100       0     0     0>
             ;
     };
 

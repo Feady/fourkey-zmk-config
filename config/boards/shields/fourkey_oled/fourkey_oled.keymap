@@ -1,14 +1,18 @@
 /*
- * fourkey_oled keymap — 占位映射，板上手后按需改
+ * fourkey_oled keymap
  *
- * 物理位置（1×4，按最终 PCB 实际接线）：
- *   ┌──────────────┬──────────────┐
- *   │ 0  K1=D9/P1.06│ 1  K2=D6/P1.00│
- *   ├──────────────┼──────────────┤
- *   │ 2  K3=D8/P1.04│ 3  K4=D7/P0.11│
- *   └──────────────┴──────────────┘
+ * 物理布局：2×2 矩阵排列（直连接线，仅物理位置按矩阵排布）：
+ *   ┌────────────────┬────────────────┐
+ *   │ K1 左上 (P1.06)│ K2 右上 (P1.00)│
+ *   ├────────────────┼────────────────┤
+ *   │ K3 左下 (P1.04)│ K4 右下 (P0.11)│
+ *   └────────────────┴────────────────┘
+ * 位置索引 0..3 = K1..K4（先第一排从左到右，再第二排）。
  *
- * 默认层：K1 播放/暂停  K2 音量−  K3 音量+  K4 长按进 Fn 层 / 短按静音
+ * 默认层：K1 Ctrl+C（长按进 Fn 层）  K2 Ctrl+V  K3 Ctrl+D  K4 Alt+Tab
+ *   K4 = 自定义宏：短按 = 完整 Alt+Tab；
+ *        按住 = Alt 一直按着 + 敲一次 Tab（Windows 任务切换器保持显示，
+ *        松开按键即释放 Alt 并确认切换）。
  * Fn 层： K1 配对设备0  K2 配对设备1  K3 清除配对  K4 进 UF2 刷机
  *
  * 改键速查（dt-bindings/zmk/keys.h）：
@@ -25,14 +29,34 @@
 /* dt-bindings/zmk/layers.h 已从 ZMK main 移除（层直接用层号/层名引用） */
 
 / {
+    macros {
+        /* Alt+Tab 切换器：
+           按下 → 按住 LALT + 敲一次 TAB；
+           &macro_pause_for_release → 剩余部分等按键释放才执行；
+           释放 → 释放 LALT。
+           短按 = 一次完整 Alt+Tab；长按 = 切换器保持显示。 */
+        alt_tab: alt_tab {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <10>;
+            tap-ms = <30>;
+            bindings = <
+                &macro_press   &kp LALT
+                &macro_tap     &kp TAB
+                &macro_pause_for_release
+                &macro_release &kp LALT
+            >;
+        };
+    };
+
     keymap {
         compatible = "zmk,keymap";
 
         default_layer {
-            display-name = "Media";
+            display-name = "Default";
             bindings = <
-                &kp C_PLAY_PAUSE    &kp C_VOL_DN
-                &kp C_VOL_UP        &lt NUM_1 C_MUTE
+                &lt NUM_1 LC(C)     &kp LC(V)
+                &kp LC(D)           &alt_tab
             >;
         };
 

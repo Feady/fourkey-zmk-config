@@ -99,6 +99,15 @@
     compatible = "nordic,nrf-twim";
     status = "okay";
     clock-frequency = <100000>;   /* 标准 100kHz，国产 OLED 模块 400k 易不稳 */
+    /* [B21] SSD1306 写帧缓冲必须一次连续传输（屏不接受片段间 Repeated START），
+       TWIM 默认拼接缓冲只有 16 字节 → 每次写屏都报
+       "internal driver buffer ... insufficient (1 + 640 > 16)" 而被拒绝，
+       GDDRAM 从未写入 = 满屏雪花（B20 串口日志实锤）。
+       nordic,nrf-twim.yaml 明写：SSD1306 必须提供此属性；
+       参考 joelspadin/zmk-keyboards marten_ssd1306 与 nordic demo 均取 1024。
+       binding 建议 flash-buf-max-size 取相同值（两者共用同一块 RAM）。 */
+    zephyr,concat-buf-size = <1024>;
+    zephyr,flash-buf-max-size = <1024>;
     pinctrl-0 = <&i2c0_twim_default>;
     pinctrl-1 = <&i2c0_twim_sleep>;
     pinctrl-names = "default", "sleep";

@@ -1,79 +1,121 @@
-# fourkey_oled · 正式 ZMK 固件（Rev E：4 键直连 + SSD1306 OLED）
+# fourkey_oled · 四键蓝牙键盘 ZMK 固件
 
-> 配套硬件：用户嘉立创 EDA 第三轮原理图（4 键直连 → GND、OLED I2C、电池开关 SW2、RST 双击 UF2）。
-> 引脚与 `QuickValidation/接线表.md` 一致；验证固件见 `QuickValidation/`（裸机，与本固件互不影响）。
+> **当前状态（2026-11-15，B21）**：USB HID、蓝牙、4 键功能、Alt+Tab 宏、SSD1306 状态屏全部实测通过。
+> 硬件：SuperMini nRF52840（nice!nano v2 兼容克隆板）+ 4 键直连 + 0.96" I2C OLED + 锂电池。
+> 仓库：`https://github.com/Feady/fourkey-zmk-config`，固件经 GitHub Actions 编译，无需本地 Zephyr 环境。
 
-## 引脚
+---
 
-| 键位 | 位置索引 | GPIO | 板丝印 | J1 脚 |
+## 1. 硬件与引脚
+
+| 键位 | 位置 | GPIO | 板丝印 | 接线 |
 |---|---|---|---|---|
-| K1 | 0 | P1.04 | D8 | J1-12 |
-| K2 | 1 | P0.24 ★ | D5 | J1-9 |
-| K3 | 2 | P0.11 | D7 | J1-11 |
-| K4 | 3 | P1.00 | D6 | J1-10 |
+| K1 | 左上 | P1.06 | D9 | 按下 → GND |
+| K2 | 右上 | P1.00 | D6 | 按下 → GND |
+| K3 | 左下 | P1.04 | D8 | 按下 → GND |
+| K4 | 右下 | P0.11 | D7 | 按下 → GND |
 
-- 全部输入内部上拉，按下接 GND（`zmk,kscan-gpio-direct`，`wakeup-source`）。
-- ★ K2/P0.24：部分 SuperMini 克隆板占用此脚（分压电路），若 K2 恒「按下」，把 overlay 里 `&pro_micro 5` 换成 `&pro_micro 4`（P0.22 / J1-8）并同步改接线。
-- OLED：SSD1306 I2C `0x3C`，SDA=D2/P0.17（J1-6）、SCL=D3/P0.20（J1-7）＝ `&pro_micro_i2c` 默认脚。
+- 4 键为**直连接线**（`zmk,kscan-gpio-direct`），内部上拉、低电平有效；物理位置按 **2×2 矩阵**排布，位置索引 0..3 = K1..K4（先第一排从左到右，再第二排）。
+- 虚拟矩阵变换 2 行 × 2 列，`physical_layout` 同步为 2×2（ZMK Studio 需要）。
+- **OLED**：I2C `0x3C`，SDA = D2/P0.17、SCL = D3/P0.20（nice!nano 的 `&pro_micro_i2c` 默认脚），128×64，SSD1306/SSD1315 家族。
+- 早期文档里的 D8/D5/D7/D6 引脚表已作废；P0.24 已从固件完全移除。
 
-## 默认键位（占位，回头改）
+## 2. 键位与行为
 
-| 键 | 默认层 | Fn 层（长按 K4 进入） |
+| 键 | 短按 | 长按 |
 |---|---|---|
-| K1 | 播放/暂停 | 蓝牙配对设备 0 |
-| K2 | 音量 − | 蓝牙配对设备 1 |
-| K3 | 音量 + | 清除蓝牙配对 |
-| K4 | 短按静音 / **长按切 Fn 层** | 进 UF2 刷机模式 |
+| K1 左上 | Ctrl+C | 按住进入 Fn 层 |
+| K2 右上 | Ctrl+V | — |
+| K3 左下 | Ctrl+D | — |
+| K4 右下 | Alt+Tab（切换一次窗口） | Alt 保持按住，任务切换器持续显示，**松手确认切换** |
 
-改键：编辑 `config/boards/shields/fourkey_oled/fourkey_oled.keymap`，常用键名速查已写在文件头注释里。
+**Fn 层**（按住 K1 再按）：K1 蓝牙配对设备 0 / K2 设备 1 / K3 清除配对 / **K4 解锁 ZMK Studio**。
 
-## 如何编译（GitHub Actions，无需本地环境）
+- Alt+Tab 用 ZMK 官方宏实现，无需自写 C 模块：`&macro_press &kp LALT` → `&macro_tap &kp TAB` → `&macro_pause_for_release` → `&macro_release &kp LALT`。关键是 `pause_for_release` 让释放动作等到按键松开才执行。
+- 改键：编辑 `config/boards/shields/fourkey_oled/fourkey_oled.keymap`。
+- **进 UF2 刷机走硬件通道**：双击板边 RST 键（Fn 层 K4 已让给 Studio 解锁）。
 
-1. 在 GitHub 新建仓库（如 `zmk-config`），把本目录内容按以下结构上传：
-   ```text
-   zmk-config/
-   ├── .github/workflows/build.yml   ← 编译流水线（必须在 .github/workflows/ 下，GitHub 只认这个目录）
-   └── config/
-       ├── west.yml
-       ├── fourkey_oled.conf
-       └── boards/shields/fourkey_oled/
-           ├── fourkey_oled.overlay
-           ├── fourkey_oled.keymap
-           └── Kconfig.shield
-   ```
-   注意 shield 必须在 `config/boards/shields/` 下（west.yml `self.path: config`）。
-2. push 后自动触发 Build；仓库 → **Actions → Build ZMK firmware → Artifacts**，
-   下载 `fourkey_oled-nice_nano_v2-zmk.uf2`（Artifacts 是 zip，解压取 uf2）。
-3. 每次改键后 push 即自动出新固件。
+## 3. 显示与连接
 
-## 刷机
+- 状态屏为 ZMK 内置三 widget：左上输出状态（USB/BLE）、右上电池电量、左下当前图层；空闲自动熄屏，按键唤醒。
+- **电量显示百分比**（B22 起）：`CONFIG_ZMK_WIDGET_BATTERY_STATUS_SHOW_PERCENTAGE=y`，显示 `100%` 文本，插 USB 时前面带充电符号。此前默认只画电池图标。
+- **输出策略**：ZMK 默认 —— 插 USB 走 USB，拔掉后蓝牙兜底。蓝牙设备名 **"FourKey OLED"**，实测 VDDH 采样/电量上报正常。
+- **VIA 连不上是正常的**：VIA 是 QMK 专属协议，ZMK 不响应；ZMK 对应方案是 [ZMK Studio](https://zmk.studio)（Chrome/Edge 网页版或原生客户端），USB 连接后按住 K1 进 Fn 层再按 K4 解锁即可在线改键。
+- ⚠️ Studio 保存过改键后，重刷固件里的 keymap 不会覆盖，需在 Studio 里点 *Restore Stock Settings*。
 
-1. 电池开关置 ON，USB 连电脑；
-2. **双击 RST**（SW1）→ 出现 `NICENANO` 盘（SuperMini 克隆盘名可能略不同）；
-3. 把 `fourkey_oled-nice_nano_v2-zmk.uf2` 拖进盘符，板子自动重启；
-4. 软件入口：Fn 层按 K4（`&bootloader`），无需拆壳。
+## 4. 文件结构与关键配置
 
-## OLED 显示
-
-- 128×64 模块默认即用；若你的模块是 **128×32**：overlay 里 `height = <32>`、`multiplex-ratio = <31>`、`com-invdir` 改 `com-sequential`。
-- 显示内容为 ZMK 内置状态屏：电池电量、蓝牙连接/层名（`Media` / `Fn`）。
-- 模块板载 4.7~10 kΩ 上拉即可，PCB 上的 R_PU1/R_PU2 留 DNP。
-
-## 已知待核验（沿用 Rev D / V11）
-
-- **电量读数**：ZMK 电量走 nice!nano 板级 vbatt 分压定义；SuperMini 克隆板的分压比/使能脚可能不同。板到手后看屏上电量与万用表实测差多少，误差大再改（需要覆盖板级 vbatt node，届时我来改）。
-- **唤醒**：`&soft_off` 后按任意键唤醒需 `wakeup-source`（已开）＋直连 kscan 实测；若唤不醒，检查电池开关是否 ON。
-
-## 与 QuickValidation 的关系
-
-- `QuickValidation/`：裸机验证固件（UF2 已编译好），用于桌面先验证显示/按键/电池，与本固件互不干扰；
-- 本目录：正式 ZMK 固件（需 GitHub Actions 编译），板到手、三项验证通过后刷入。
-
-## 本地编译（可选）
-
-```bash
-west init -l config
-west update
-cd zmk/app
-west build -b nice_nano_v2 -s zmk/app -d build/fourkey_oled -- -DSHIELD=fourkey_oled
+```text
+ZMK_Firmware/
+├── build.yaml                    # 构建矩阵；板名必须 nice_nano@2.0.0//zmk
+├── .github/workflows/build.yml   # 官方 reusable workflow（build-user-config.yml@main）
+└── config/
+    ├── west.yml
+    ├── fourkey_oled.conf         # 功能开关（显示/百分比/内存/日志）
+    └── boards/shields/fourkey_oled/
+        ├── fourkey_oled.keymap   # 键位 + Alt+Tab 宏
+        ├── fourkey_oled.overlay  # kscan / 矩阵变换 / 物理布局 / I2C + OLED 节点
+        ├── Kconfig.defconfig     # 键盘名 + 官方单色屏 LVGL 参数
+        ├── Kconfig.shield
+        └── CMakeLists.txt
 ```
+
+**几个不能动的要点**（都是踩坑换来的，详见第 6 节）：
+
+| 位置 | 关键值 | 作用 |
+|---|---|---|
+| `build.yaml` | `nice_nano@2.0.0//zmk` | zmk 变体才带 `CONFIG_ZMK_USB/BLE/SETTINGS_NVS`；裸板名构建 USB 根本没编进去 |
+| `Kconfig.defconfig` | `LV_Z_BITS_PER_PIXEL=1`、`LV_Z_VDB_SIZE=64`、`LV_COLOR_DEPTH_1`、`LV_Z_MEM_POOL_SIZE=5120` | 与官方 corne/lily58/nibble/nice_view 一致；缺失会导致满屏雪花/硬死 |
+| `overlay &i2c0` | `nordic,nrf-twim` + `concat-buf-size=<1024>` + `flash-buf-max-size=<1024>` | TWIM 有传输超时不会挂死；1024 拼接缓冲是 SSD1306 整帧写入的硬性要求 |
+| `overlay oled` | `solomon,ssd1306fb`、`0x3C`、128×64 | 屏型判定见第 6 节 |
+| `conf` | `HEAP_MEM_POOL_SIZE=32768`、独立显示线程 3072、主栈 2048 | LVGL 走系统堆，堆为 0 会硬错误 |
+
+## 5. 编译与刷写
+
+**编译**：push 到 GitHub 后自动触发 Actions → `Build ZMK firmware` → 成功后从 Artifacts 下载 zip，解出 `fourkey_oled-nice_nano@2.0.0__zmk-zmk.uf2`。构建日志里会打印最终 `.config`，改完配置建议 grep 核对是否生效。
+
+**刷写**（Windows，实测最可靠）：
+
+1. 双击板边 RST 键 → 出现 `NICENANO` 盘符；
+2. 用 PowerShell 直写，盘符消失 = 写入成功：
+   ```powershell
+   Copy-Item -LiteralPath ".\fourkey_oled-nice_nano@2.0.0__zmk-zmk.uf2" -Destination "E:\" -Force
+   ```
+3. 板子自动重启运行新固件。
+
+> 不建议：串口 DFU（`adafruit-nrfutil`，数据流必挂）、资源管理器拖拽（曾静默失败）。
+> 刷写不擦除 NVS，蓝牙配对等设置会保留。
+
+**抓启动日志**：`CONFIG_ZMK_USB_LOGGING=y` 已开，CDC 串口通常是 COM6。CDC 日志**不缓存**，必须先打开串口再**单击** RST 复位（双击会进刷机模式）；抓之前先关掉串口助手，否则 COM 口被独占。
+
+## 6. 排障沉淀（根因链）
+
+从 B1 到 B21 的所有坑，按层次归类，避免重复试错：
+
+| 层 | 现象 | 根因 / 修复 |
+|---|---|---|
+| 构建 | USB 完全不枚举、HID 无输出 | 板名缺 `//zmk` 变体 → `CONFIG_ZMK_USB` 未编入。换官方 reusable workflow + 变体板名（B8） |
+| 启动 | 显示一开整机硬死 | 系统堆 0 + 主栈 1KB + LVGL 16-bit 色深对 1-bit 屏。B16 堆/独立线程/主栈，B17 `LV_COLOR_DEPTH_1`，B20 官方单色 Kconfig（BPP=1/VDB=64） |
+| I2C | 满屏雪花（屏亮但无内容） | TWIM 默认拼接缓冲 16B，SSD1306 整帧写要 641B → 每次 `display_write` 被拒，GDDRAM 从未写入。B21 设 `concat-buf-size=1024` |
+| 屏型 | 试 SH1106 驱动后黑屏 | SH1106 路径用 0xAD DCDC 供电，本屏只认 0x8D 充电泵 → 屏是 SSD1306/SSD1315 家族，非 SH1106（B18/B19） |
+| 蓝牙 | 搜不到设备 | 缺 `Kconfig.defconfig` 里的 `ZMK_KEYBOARD_NAME` → 广播名为空。补 "FourKey OLED" |
+| 键位 | 阵列不对 | 固件配 D8/D5/D7/D6，实物是 D9/D6/D8/D7，K1 的 P1.06 根本没被扫描 |
+
+**SSD1315 说明**：Zephyr 4.5 才新增 `solomon,ssd1315` 绑定（官方参考 M5Stack Unit MiniOLED），但仍由同一个 SSD1306 驱动处理；ZMK main 锁 Zephyr 4.1，用 `solomon,ssd1306fb` 是正确写法。
+
+## 7. 后续待办
+
+- [ ] **设计更好看的界面**（用户提出）：走官方自定义状态屏路径 —— `CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y` + 自写 LVGL 绘制/图片资源，官方范例是 `app/boards/shields/nice_view`（canvas + image widget）。可保留现有三个 widget 数据源，只重做布局与视觉；注意自定义屏需要更大的 `LV_Z_MEM_POOL_SIZE`（nice_view 用 8192）。
+- [ ] **恢复 ZMK Studio**：B11 曾启用 `studio-rpc-usb-uart` snippet + `CONFIG_ZMK_STUDIO=y`，当时为二分排障临时移除；后来证实回归元凶是显示子系统，Studio 本身无罪，可按需要在 `build.yaml` 加回 snippet 并在 conf 开 `CONFIG_ZMK_STUDIO=y`。
+- [ ] 确认电池百分比读数与实际电压的偏差（日志实测 VDDH 4460 mV → 100%），必要时覆盖板级 vbatt 分压定义。
+- [ ] 验证空闲熄屏 / 按键唤醒、`&soft_off` 软关机唤醒。
+
+## 8. 相关文档
+
+| 文档 | 内容 |
+|---|---|
+| `NRF52840_四键蓝牙键盘_底板设计规格_RevD.md` | 硬件设计规格（五章结构，投板版） |
+| `Schematic/投板前检查清单_RevE.md` | Rev E 投板前检查 |
+| `DisplayValidation/`、`QuickValidation/` | 早期裸机验证固件与接线表（历史产物，正式固件不受其影响） |
+| `换屏评估_SSD1306_OLED.md` | 由 ST7735S IPS 屏改 I2C OLED 的评估记录 |
+| `.workbuddy/memory/` | 项目长期笔记与逐日排障日志 |

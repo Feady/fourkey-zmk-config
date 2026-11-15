@@ -23,7 +23,8 @@
 
 / {
     chosen {
-        /* ZMK 现行要求：显式声明 kscan 与显示设备 */
+        /* ZMK 现行要求：zephyr,display 供显示子系统，zmk,display 供状态屏组件 */
+        zephyr,display = &oled;
         zmk,kscan = &fourkey_kscan;
         zmk,display = &oled;
     };

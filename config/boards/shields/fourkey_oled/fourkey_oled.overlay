@@ -94,5 +94,16 @@
     };
 };
 
-/* USB CDC 控制台块已移除：CONFIG_ZMK_USB_LOGGING 未启用时无用；
-   Studio 的 RPC 串口由 build.yaml 的 studio-rpc-usb-uart snippet 自动添加 */
+/* [B12 诊断] USB CDC 串口日志通道（对应 CONFIG_ZMK_USB_LOGGING=y） */
+&zephyr_udc0 {
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+/ {
+    chosen {
+        zephyr,console = &cdc_acm_uart0;
+        zephyr,shell-uart = &cdc_acm_uart0;
+    };
+};

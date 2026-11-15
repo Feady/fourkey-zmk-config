@@ -18,4 +18,5 @@
 include:
   - board: nice_nano@2.0.0//zmk
     shield: fourkey_oled
-    snippet: studio-rpc-usb-uart
+  # [B12 诊断] studio-rpc-usb-uart snippet 暂移除（B11 回归排查），
+  # 定位后恢复并加回 CONFIG_ZMK_STUDIO=y

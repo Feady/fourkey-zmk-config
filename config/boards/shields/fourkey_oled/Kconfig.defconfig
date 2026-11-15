@@ -3,6 +3,12 @@ if SHIELD_FOURKEY_OLED
 config ZMK_KEYBOARD_NAME
     default "FourKey OLED"
 
+# B24：默认走自定义状态屏（官方 nice_view 的写法）。
+# conf 里也显式写了 CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y，双保险。
+choice ZMK_DISPLAY_STATUS_SCREEN
+    default ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
+endchoice
+
 endif # SHIELD_FOURKEY_OLED
 
 # ---- 显示：与 ZMK 官方 SSD1306 shield（corne / lily58 / nibble / nice_view）
@@ -22,6 +28,7 @@ config LV_Z_BITS_PER_PIXEL
     default 1
 
 config LV_Z_MEM_POOL_SIZE
+    default 8192 if ZMK_DISPLAY_STATUS_SCREEN_CUSTOM
     default 5120 if ZMK_DISPLAY_STATUS_SCREEN_BUILT_IN
 
 choice LV_COLOR_DEPTH

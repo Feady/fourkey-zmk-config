@@ -1,41 +1,58 @@
 /*
- * fourkey_oled keymap
+ * fourkey_oled keymap - B24「层即页面」
  *
- * 物理布局：2×2 矩阵排列（直连接线，仅物理位置按矩阵排布）：
- *   ┌────────────────┬────────────────┐
- *   │ K1 左上 (P1.06)│ K2 右上 (P1.00)│
- *   ├────────────────┼────────────────┤
- *   │ K3 左下 (P1.04)│ K4 右下 (P0.11)│
- *   └────────────────┴────────────────┘
- * 位置索引 0..3 = K1..K4（先第一排从左到右，再第二排）。
+ * 物理布局：2×2 直连按键（先第一排从左到右，再第二排）
+ *   ┌──────────┬──────────┐
+ *   │ K1 左上  │ K2 右上  │   位置索引 0..3 = K1..K4
+ *   ├──────────┼──────────┤
+ *   │ K3 左下  │ K4 右下  │
+ *   └──────────┴──────────┘
  *
- * 默认层：K1 Ctrl+C（长按进 Fn 层）  K2 Ctrl+V  K3 Ctrl+D  K4 Alt+Tab
- *   K4 = 自定义宏：短按 = 完整 Alt+Tab；
- *        按住 = Alt 一直按着 + 敲一次 Tab（Windows 任务切换器保持显示，
- *        松开按键即释放 Alt 并确认切换）。
- * Fn 层： K1 配对设备0  K2 配对设备1  K3 清除配对  K4 ZMK Studio 解锁改键
- *        （进 UF2 刷机用板边 RST 按键双击，硬件通道不受影响）
+ * 只有 4 个物理键，所以「功能键」不新增硬件，而是用组合键（combo）：
+ *   同时按 K1+K2 -> &to 1 进入 Menu 页（松开后页面保持，4 个键全部可用）
+ *   Menu 页：K1->Num / K2->Media / K3->Sys / K4->Home
+ *   其它页面：K4 统一 = &to 0（一键回主页面）
+ *   Sys 页 K3 -> Fn 页，Fn 页放蓝牙 / Studio 解锁 / 第 3 个 BLE 配置
  *
- * 改键速查（dt-bindings/zmk/keys.h）：
- *   &kp A~Z、&kp SPACE、&kp RET、&kp ESC、&kp TAB
- *   &kp C_PLAY_PAUSE / C_NEXT / C_PREV / C_VOL_UP / C_VOL_DN / C_MUTE
- *   &kp LC(X)（Ctrl+X）、LG(X)（Win/Cmd+X）、LA(X)（Alt+X）
- *   &bt BT_SEL 0~3 / BT_CLR / BT_PROF_NEXT / BT_PROF_CLR
- *   &sys_reset（重启固件）、&bootloader（进 UF2）、&soft_off（软关机）
+ * 为什么不用 hold-tap：官方 &lt 默认 flavor = tap-preferred，快速「按住 K1
+ * 再点其它键」会被判成 tap（Ctrl+C + 另一键），而且被按住的 K1 在菜单页
+ * 上无法再按，四个键会少一个。combo 是 4 键板最稳的逻辑功能键。
+ *
+ * 屏幕上的 2×2 卡片标签由 custom_status_screen.c 通过
+ * zmk_keymap_get_layer_binding_at_idx() 运行时读取本文件（以及 ZMK Studio
+ * 保存的在线改键）生成，改键后屏幕自动同步，不需要改 C 代码。
+ *
+ * 层序（Studio 里可重命名/重排，屏幕读的是真实层名）：
+ *   0 Default / 1 Menu / 2 Num / 3 Media / 4 Sys / 5 Fn
+ *   6,7 = reserved（Studio 备用层）
  */
 
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/bt.h>
-/* dt-bindings/zmk/layers.h 已从 ZMK main 移除（层直接用层号/层名引用） */
 
 / {
+    combos {
+        compatible = "zmk,combos";
+
+        /* 逻辑功能键：K1+K2 = 打开菜单页。
+           layers = <0> 只在 Default 页生效；require-prior-idle-ms 防止
+           连续快速按 K1、K2 时误触发（官方文档 combos.md）。 */
+        combo_menu {
+            timeout-ms = <30>;
+            require-prior-idle-ms = <80>;
+            key-positions = <0 1>;
+            layers = <0>;
+            bindings = <&to 1>;
+        };
+    };
+
     macros {
         /* Alt+Tab 切换器：
-           按下 → 按住 LALT + 敲一次 TAB；
-           &macro_pause_for_release → 剩余部分等按键释放才执行；
-           释放 → 释放 LALT。
-           短按 = 一次完整 Alt+Tab；长按 = 切换器保持显示。 */
+           按下 -> 按住 LALT + 敲一次 TAB；
+           &macro_pause_for_release -> 剩余部分等按键释放才执行；
+           释放 -> 释放 LALT。
+           短按 = 一次完整 Alt+Tab；长按 = 任务切换器保持显示。 */
         alt_tab: alt_tab {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
@@ -56,16 +73,48 @@
         default_layer {
             display-name = "Default";
             bindings = <
-                &lt NUM_1 LC(C)     &kp LC(V)
-                &kp LC(D)           &alt_tab
+                &kp LC(C)       &kp LC(V)
+                &kp LC(D)       &alt_tab
+            >;
+        };
+
+        menu_layer {
+            display-name = "Menu";
+            bindings = <
+                &to 2           &to 3
+                &to 4           &to 0
+            >;
+        };
+
+        num_layer {
+            display-name = "Num";
+            bindings = <
+                &kp N1          &kp N2
+                &kp N3          &to 0
+            >;
+        };
+
+        media_layer {
+            display-name = "Media";
+            bindings = <
+                &kp C_VOL_DN    &kp C_VOL_UP
+                &kp C_MUTE      &to 0
+            >;
+        };
+
+        sys_layer {
+            display-name = "Sys";
+            bindings = <
+                &bt BT_SEL 0    &bt BT_SEL 1
+                &to 5           &to 0
             >;
         };
 
         fn_layer {
             display-name = "Fn";
             bindings = <
-                &bt BT_SEL 0        &bt BT_SEL 1
-                &bt BT_CLR          &studio_unlock
+                &studio_unlock  &bt BT_CLR
+                &bt BT_SEL 2    &to 0
             >;
         };
 

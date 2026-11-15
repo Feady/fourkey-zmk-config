@@ -95,3 +95,17 @@
 &oled {
     status = "disabled";
 };
+
+/* [B5 诊断] USB CDC 串口日志通道（对应 CONFIG_ZMK_USB_LOGGING=y） */
+&zephyr_udc0 {
+    cdc_acm_uart0: cdc_acm_uart0 {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+/ {
+    chosen {
+        zephyr,console = &cdc_acm_uart0;
+        zephyr,shell-uart = &cdc_acm_uart0;
+    };
+};

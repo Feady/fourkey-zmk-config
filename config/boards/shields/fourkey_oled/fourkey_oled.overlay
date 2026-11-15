@@ -28,6 +28,9 @@
         zephyr,display = &oled;
         zmk,kscan = &fourkey_kscan;
         zmk,display = &oled;
+        /* ZMK Studio 用 physical-layout chosen 识别键位几何（官方 corne 写法）；
+           Studio 要求**不要**用 chosen zmk,matrix-transform。 */
+        zmk,physical-layout = &physical_layout0;
     };
 
     /* 矩阵变换：直连 kscan 无行列，用虚拟 2 行 × 2 列对应 2×2 实物排布
@@ -137,16 +140,9 @@
     };
 };
 
-/* [B12 诊断] USB CDC 串口日志通道（对应 CONFIG_ZMK_USB_LOGGING=y） */
-&zephyr_udc0 {
-    cdc_acm_uart0: cdc_acm_uart0 {
-        compatible = "zephyr,cdc-acm-uart";
-    };
-};
-
-/ {
-    chosen {
-        zephyr,console = &cdc_acm_uart0;
-        zephyr,shell-uart = &cdc_acm_uart0;
-    };
-};
+/* USB CDC 串口由 build.yaml 的 studio-rpc-usb-uart snippet 提供
+   （节点 snippet_studio_rpc_usb_uart + chosen zmk,studio-rpc-uart）。
+   原先 B5 手写的 cdc_acm_uart0 日志控制台已移除：两个 CDC 接口会让
+   Windows 枚举出两个 COM 口，ZMK Studio 网页容易选到日志口而报
+   "Failed to connect to the chosen device"。需要抓启动日志时再临时恢复
+   该节点 + conf 里的 CONFIG_ZMK_USB_LOGGING=y（见 README 第 5 节）。 */

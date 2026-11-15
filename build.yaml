@@ -15,8 +15,11 @@
 # 否则 CONFIG_ZMK_USB / CONFIG_SETTINGS_NVS 等板级默认不会启用（见
 # zmk 博客 2025-12-09-zephyr-4-1.md 的 ZMK Board Variant 一节）。
 ---
+# ZMK Studio 官方配置（docs/features/studio.md）：
+#   snippet 提供 RPC 用的 CDC-ACM 串口 + ZMK_BEHAVIORS_KEEP_ALL，
+#   但 snippet.conf 不含 ZMK_STUDIO，必须通过 cmake-args 显式开启。
 include:
   - board: nice_nano@2.0.0//zmk
     shield: fourkey_oled
-  # [B12 诊断] studio-rpc-usb-uart snippet 暂移除（B11 回归排查），
-  # 定位后恢复并加回 CONFIG_ZMK_STUDIO=y
+    snippet: studio-rpc-usb-uart
+    cmake-args: -DCONFIG_ZMK_STUDIO=y

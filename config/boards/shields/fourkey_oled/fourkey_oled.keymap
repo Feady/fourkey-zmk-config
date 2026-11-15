@@ -68,5 +68,15 @@
                 &bt BT_CLR          &studio_unlock
             >;
         };
+
+        /* Studio 专用备用层：普通构建忽略（reserved），
+           启用 ZMK Studio 后可在 UI 里启用并自由改键。 */
+        extra1 {
+            status = "reserved";
+        };
+
+        extra2 {
+            status = "reserved";
+        };
     };
 };

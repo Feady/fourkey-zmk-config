@@ -87,6 +87,6 @@
         segment-remap;          /* 模块若左右镜像，删掉本行再试 */
         com-invdir;             /* 128x32 模块一般改 com-sequential */
         prechargep = <0x22>;
-        contrast = <255>;
+        /* contrast 不在 Zephyr 4.1 绑定中（DT 校验会报错），默认对比度即可 */
     };
 };

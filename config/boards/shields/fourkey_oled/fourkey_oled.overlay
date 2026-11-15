@@ -98,6 +98,7 @@
 &i2c0 {
     compatible = "nordic,nrf-twim";
     status = "okay";
+    clock-frequency = <100000>;   /* 标准 100kHz，国产 OLED 模块 400k 易不稳 */
     pinctrl-0 = <&i2c0_twim_default>;
     pinctrl-1 = <&i2c0_twim_sleep>;
     pinctrl-names = "default", "sleep";

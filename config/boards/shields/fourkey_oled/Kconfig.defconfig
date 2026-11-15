@@ -1,0 +1,6 @@
+if SHIELD_FOURKEY_OLED
+
+config ZMK_KEYBOARD_NAME
+    default "FourKey OLED"
+
+endif # SHIELD_FOURKEY_OLED

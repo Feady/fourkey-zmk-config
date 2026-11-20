@@ -2,11 +2,11 @@
  * fourkey_oled - B26 状态屏（128x64 单色 SSD1306）
  *
  * 布局（B26 按用户反馈重构）：
- *   y=0..12   顶栏 10px：左=USB/BLE，中=操作提示，右=电量百分比
+ *   y=0..12   顶栏 10px：中=连接状态/操作提示交替闪烁（1.5s），右=电量百分比
  *             （去掉层名——看四象限的键位内容即可知道当前在哪一层）
  *   y=13      分隔线
  *   y=15..63  四象限键位区：中间一个十字分隔（不再给每个键画边框，省电）
- *             K1 左上 / K2 右上 / K3 左下 / K4 右下，14px 大字体
+ *             K1 左上 / K2 右上 / K3 左下 / K4 右下，12px 字体（B28 缩小）
  *             按下只在文字前加 ">" 标记，不整块反白
  *
  * ★ 颜色极性（B25 修复，保留）--------------------------------------------
@@ -44,20 +44,18 @@
 #define PIXEL_ON()  lv_color_black()
 #define PIXEL_OFF() lv_color_white()
 
-#define FONT_KEY  &lv_font_montserrat_14
+#define FONT_KEY  &lv_font_montserrat_12
 #define FONT_TOP  &lv_font_montserrat_10
 
 /* ---------- LVGL 对象 ---------- */
-static lv_obj_t *out_label;
-static lv_obj_t *hint_label;
+static lv_obj_t *banner_label;  /* 顶栏中部：连接状态/提示交替闪烁 */
 static lv_obj_t *bat_label;
 static lv_obj_t *key_labels[KEY_COUNT];
 static lv_style_t screen_style;
 
 /* ---------- 缓存：只有文本真的变了才动 LVGL ---------- */
-static char cache_out[8];
+static char cache_banner[16];
 static char cache_bat[8];
-static char cache_hint[16];
 static char cache_keys[KEY_COUNT][LABEL_CAP];
 static volatile bool key_down[KEY_COUNT];
 
@@ -267,19 +265,6 @@ static void refresh_ui(void) {
     zmk_keymap_layer_id_t layer_id =
         zmk_keymap_layer_index_to_id(zmk_keymap_highest_layer_active());
 
-    /* 输出状态 */
-    enum zmk_transport transport = zmk_endpoint_get_selected().transport;
-    if (transport == ZMK_TRANSPORT_NONE) {
-        transport = zmk_endpoint_get_preferred_transport();
-    }
-    char out[8];
-    switch (transport) {
-    case ZMK_TRANSPORT_USB: snprintf(out, sizeof(out), "USB"); break;
-    case ZMK_TRANSPORT_BLE: snprintf(out, sizeof(out), "BLE"); break;
-    default:                snprintf(out, sizeof(out), "---"); break;
-    }
-    set_text(out_label, cache_out, sizeof(cache_out), out);
-
     /* 电量百分比：'+' = USB 供电中 */
     char bat[8];
 #if IS_ENABLED(CONFIG_USB_DEVICE_STACK)
@@ -290,16 +275,40 @@ static void refresh_ui(void) {
 #endif
     set_text(bat_label, cache_bat, sizeof(cache_bat), bat);
 
-    /* 顶部提示：10px 空间有限，用紧凑写法（12>MENU = 按 K1+K2 进菜单）*/
-    char hint[16];
-    if (layer_id == zmk_keymap_layer_default()) {
-        snprintf(hint, sizeof(hint), "12>MENU");
-    } else if (is_to_layer(effective_binding(3), zmk_keymap_layer_default())) {
-        snprintf(hint, sizeof(hint), "K4>HOME");
-    } else {
-        snprintf(hint, sizeof(hint), "12>MENU");
+    /* B28：顶栏中部在「连接状态」和「操作提示」之间每 1.5s 交替。
+       原来三者同排，10px 下 "K1+K2>MENU" 显示不全；交替后独占整行。 */
+    enum zmk_transport transport = zmk_endpoint_get_selected().transport;
+    if (transport == ZMK_TRANSPORT_NONE) {
+        transport = zmk_endpoint_get_preferred_transport();
     }
-    set_text(hint_label, cache_hint, sizeof(cache_hint), hint);
+    char out[8];
+    switch (transport) {
+    case ZMK_TRANSPORT_USB: snprintf(out, sizeof(out), "USB"); break;
+    case ZMK_TRANSPORT_BLE: snprintf(out, sizeof(out), "BLE"); break;
+    default:                snprintf(out, sizeof(out), "---"); break;
+    }
+
+    static uint32_t banner_last_toggle;
+    static bool banner_show_hint;
+    uint32_t now = k_uptime_get_32();
+    if (now - banner_last_toggle >= 1500U) {
+        banner_show_hint = !banner_show_hint;
+        banner_last_toggle = now;
+    }
+
+    char banner[16];
+    if (banner_show_hint) {
+        if (layer_id == zmk_keymap_layer_default()) {
+            snprintf(banner, sizeof(banner), "K1+K2>MENU");
+        } else if (is_to_layer(effective_binding(3), zmk_keymap_layer_default())) {
+            snprintf(banner, sizeof(banner), "K4>HOME");
+        } else {
+            snprintf(banner, sizeof(banner), "K1+K2>MENU");
+        }
+    } else {
+        snprintf(banner, sizeof(banner), "%s", out);
+    }
+    set_text(banner_label, cache_banner, sizeof(cache_banner), banner);
 
     /* 四个键位：按下只在文字前加 '>'，不整块反白 */
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
@@ -377,12 +386,9 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_add_style(screen, &screen_style, LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 顶栏 12px：输出 | 提示 | 电量 */
-    out_label = make_label(screen, "---", FONT_TOP, PIXEL_ON());
-    lv_obj_align(out_label, LV_ALIGN_TOP_LEFT, 2, 0);
-
-    hint_label = make_label(screen, "12>MENU", FONT_TOP, PIXEL_ON());
-    lv_obj_align(hint_label, LV_ALIGN_TOP_MID, 0, 0);
+    /* 顶栏 10px：中部交替显示连接状态/提示，右侧电量常显 */
+    banner_label = make_label(screen, "USB", FONT_TOP, PIXEL_ON());
+    lv_obj_align(banner_label, LV_ALIGN_TOP_MID, 0, 0);
 
     bat_label = make_label(screen, "--%", FONT_TOP, PIXEL_ON());
     lv_obj_align(bat_label, LV_ALIGN_TOP_RIGHT, -2, 0);
@@ -394,7 +400,7 @@ lv_obj_t *zmk_display_status_screen(void) {
     make_line(screen, 63, 15, 1, 48); /* 竖线 */
     make_line(screen, 2, 39, 124, 1); /* 横线 */
 
-    /* 四象限键位标签，14px */
+    /* 四象限键位标签，12px */
     static const int16_t xs[2] = {3, 66};
     static const int16_t ys[2] = {17, 42};
     for (uint8_t i = 0; i < KEY_COUNT; i++) {

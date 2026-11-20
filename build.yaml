@@ -19,6 +19,13 @@
 #   snippet 提供 RPC 用的 CDC-ACM 串口 + ZMK_BEHAVIORS_KEEP_ALL，
 #   但 snippet.conf 不含 ZMK_STUDIO，必须通过 cmake-args 显式开启。
 include:
+  # B28: 官方 settings_reset shield —— 一次性"清空 NVS"固件。
+  # 启动时清空整个 settings 分区（BLE bond / 首选输出 / Studio 改键 / 层顺序），
+  # 官方 conf 会关掉 BLE 和显示，防止清完立刻又写回。
+  # 刷入后等几秒，**必须再刷回 fourkey_oled 正常固件**（否则每次启动都清空）。
+  - board: nice_nano@2.0.0//zmk
+    shield: settings_reset
+
   - board: nice_nano@2.0.0//zmk
     shield: fourkey_oled
     snippet: studio-rpc-usb-uart

@@ -1,5 +1,5 @@
 /*
- * fourkey_oled - B26 状态屏（128x64 单色 SSD1306）
+ * fourkey_oled - B30 状态屏（128x64 单色 SSD1306）
  *
  * 布局（B26 按用户反馈重构）：
  *   y=0..12   顶栏 10px：左=连接状态/操作提示交替闪烁（1.5s），右=电量百分比
@@ -18,6 +18,16 @@
  *
  * 键位标签来自运行时 keymap（zmk_keymap_get_layer_binding_at_idx），
  * Studio 在线改键/改名/重排层后 200ms 内自动同步，不说谎。
+ *
+ * ★ B30 顶栏状态修复 ----------------------------------------------------
+ * 旧逻辑：selected==NONE 时拿 preferred_transport 兜底，而 ZMK 默认
+ *   preferred=USB（endpoints.c: DEFAULT_TRANSPORT=USB）。结果拔掉 USB 且
+ *   BLE 未连时屏幕仍显示 "USB"，让人误以为在 USB 模式、蓝牙没坏——其实
+ *   那是"首选 USB"，不是"当前连接"。
+ * 新逻辑：只显示 current_instance（真正连接的通道），没连就显示 "----"。
+ *   这样"拔线后显示 ----"就是 BLE 真没连上，判断有依据。
+ * 注意：这只是显示修正，不改 ZMK 端点选择行为（USB 优先 / 拔线回退 BLE
+ *   由 ZMK endpoints.c 自己按 transport ready 状态决定）。
  */
 
 #include <ctype.h>
@@ -278,15 +288,14 @@ static void refresh_ui(void) {
 
     /* B28：顶栏中部在「连接状态」和「操作提示」之间每 1.5s 交替。
        原来三者同排，10px 下 "K1+K2>MENU" 显示不全；交替后独占整行。 */
+    /* B30：只显示真正连接的通道，不再用 preferred 兜底。
+       selected==NONE（拔掉 USB 且 BLE 未连）时显示 "----"，不再谎报 "USB"。 */
     enum zmk_transport transport = zmk_endpoint_get_selected().transport;
-    if (transport == ZMK_TRANSPORT_NONE) {
-        transport = zmk_endpoint_get_preferred_transport();
-    }
     char out[8];
     switch (transport) {
     case ZMK_TRANSPORT_USB: snprintf(out, sizeof(out), "USB"); break;
     case ZMK_TRANSPORT_BLE: snprintf(out, sizeof(out), "BLE"); break;
-    default:                snprintf(out, sizeof(out), "---"); break;
+    default:                snprintf(out, sizeof(out), "----"); break;
     }
 
     static uint32_t banner_last_toggle;

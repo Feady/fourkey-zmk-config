@@ -1,7 +1,8 @@
 # fourkey_oled · 四键蓝牙键盘 ZMK 固件
 
-> **当前状态（2026-11-20，B29）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
+> **当前状态（2026-11-20，B30）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
 > **B29 蓝牙回退到 B24 已知正常基线**：用户确认 B24 蓝牙正常，B26/B27 为"修蓝牙"加的两处 combo 与两个 BLE 实验开关经证实是回归源，已全部移除（详见第 2、3 节）。仅保留 combo 100ms 与界面改进。
+> **B30 顶栏状态修正（仅显示，不改蓝牙行为）**：旧逻辑在"当前无连接"时拿 preferred_transport 兜底，而 ZMK 默认 preferred=USB，导致拔掉 USB、BLE 又没连上时屏幕仍显示 `USB`，误导判断。B30 改为只显示**真正连接的通道**：`USB` / `BLE` / `----`（未连）。现状诊断：B29 与 B24 的 BLE 代码完全等价，"连上就断 + 沿用旧配对记录"是**两侧 bond 不一致**（电脑侧旧密钥），须两端清配对重配，非固件问题（详见第 3 节）。
 > B29 界面：顶栏 10px，**左侧**在「连接状态 / 操作提示」间每 1.5s 交替（**左对齐**，解决提示被右侧电量遮住导致的 `K1+K4` 残缺、`+100%` 显示不全），右侧电量常显；四象限键位 **12px**，十字分隔省电，标签从**运行时 keymap** 读取。
 > B28 保留：官方 `settings_reset` 一次性固件（清空 NVS，需要彻底重置蓝牙时用）；日常不再依赖它。
 > 硬件：SuperMini nRF52840（nice!nano v2 兼容克隆板）+ 4 键直连 + 0.96" I2C OLED + 锂电池。
@@ -70,7 +71,7 @@
 - 实现：`config/boards/shields/fourkey_oled/custom_status_screen.c`；`CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y` 覆盖 `app/src/display/main.c` 的 weak `zmk_display_status_screen()`。
 - **键位准确性**：卡片文字不是写死的「层号→标签」表，而是每 200 ms 调用官方 `zmk_keymap_get_layer_binding_at_idx(layer_id, position)` 读运行时 `behavior_dev / param1 / param2`，再渲染成短标签（`C+C`、`->Num`、`BT0`、`Alt+Tab` …）。`&trans` 会按 ZMK 派发逻辑向下一层解析；未知 behavior 直接显示设备名或十六进制 usage，宁可朴素也不报错信息。
 - **支持在线改键**：ZMK Studio 改键、改层名、重排层后，屏幕 200 ms 内自动同步（层名来自 `zmk_keymap_layer_name()`，标签解析的是同一份运行时 keymap）。刷新跑在 ZMK 显示工作队列里（`k_work` + `zmk_display_work_q()`），LVGL 调用线程安全。
-- 顶栏：`zmk_endpoint_get_selected()` → `USB / BLE / ---`；`zmk_battery_state_of_charge()` → 百分比，`+` 前缀表示 USB 供电中。
+- 顶栏：**B30 起**只读 `zmk_endpoint_get_selected().transport` → `USB / BLE / ----`（真正连接的通道；未连显示 `----`）。B29 及以前在 `NONE` 时用 `zmk_endpoint_get_preferred_transport()` 兜底，而 ZMK 默认 preferred=USB，导致"拔掉 USB、BLE 又没连"时误显示 `USB`——那是首选不是实连，已修正。`zmk_battery_state_of_charge()` → 百分比，`+` 前缀表示 USB 供电中。
 - 按下标记：订阅 `zmk_position_state_changed`，只写标志，显示队列里给标签加 `>` 前缀。
 - 字体：键位 **12px**、顶栏 **10px**（`lv_font_montserrat_10/12`，ASCII 纯文本；B27 为 14px 键位 + 12px 顶栏，B28 按用户反馈都调小）；空闲自动熄屏、按键唤醒沿用 ZMK 默认行为。
 
@@ -91,6 +92,8 @@
 | `CONFIG_BT_SMP_ALLOW_UNAUTH_OVERWRITE=y` | 同上，回退以保持与 B24 完全一致 |
 
 现在只有 **K1+K2** 一个 combo，蓝牙操作全走层里的按键（Sys 页 `BT_SEL 0/1`、Fn 页 `BT_CLR` / `BT_SEL 2`），不会误触发。
+
+**B30 现状诊断（用户反馈：连上就断 + 沿用旧配对记录）**：逐行 diff 确认 B29 与 B24 的 BLE 代码完全等价——**固件不是病因，别再改 BLE 配置/回退版本**。真因是**两侧 bond 不一致**：B26/B27 时期键盘端的 bond 被误清过，但电脑侧仍保留旧的 "FourKey OLED" 配对记录；电脑拿旧密钥连接、键盘已不认，握手后立即断开。解法只有一条：**键盘端和电脑端都清，再重新配对**（见下方步骤 4/5）。B30 同时修正顶栏显示兜底，让"拔线后是否真连上 BLE"看得准，避免再被假的 `USB` 误导。
 
 **ZMK 的输出机制（仍需理解）**：
 

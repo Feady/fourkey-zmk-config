@@ -1,7 +1,8 @@
 # fourkey_oled · 四键蓝牙键盘 ZMK 固件
 
-> **当前状态（2026-11-20，B27）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
-> B27 界面：顶栏 `USB/BLE · 操作提示 · 电量%`（10px，B26 为 12px），主区四象限键位用**十字分隔**（去掉格子边框省电），标签从**运行时 keymap** 读取，Studio 改键后屏幕自动同步。
+> **当前状态（2026-11-20，B28）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
+> B28 界面：顶栏 10px，中部在**连接状态 / 操作提示**之间每 1.5s 交替闪烁（解决 `K1+K2>MENU` 显示不全），右侧电量常显；四象限键位 **12px**（B27 为 14px），仍用十字分隔省电，标签从**运行时 keymap** 读取。
+> B28 蓝牙：新增官方 `settings_reset` 一次性固件，刷入后清空整个 NVS（bond / 首选输出 / Studio 改键 / 层顺序），再刷回正常固件重新配对。
 > B27 蓝牙稳定性：开 `ZMK_BLE_EXPERIMENTAL_CONN`（禁 2M PHY）+ `BT_SMP_ALLOW_UNAUTH_OVERWRITE`（同主机可覆盖旧 bond），新增 **K1+K4 = 清配对** 兜底。
 > B26 蓝牙/层修复：combo 超时 30→100ms（原太短进不了菜单）；新增 K3+K4 = `&out OUT_BLE` 强制切蓝牙，解决拔 USB 后首选输出残留 USB 导致按键全无效。
 > 硬件：SuperMini nRF52840（nice!nano v2 兼容克隆板）+ 4 键直连 + 0.96" I2C OLED + 锂电池。
@@ -48,11 +49,11 @@
 
 ## 3. 显示与连接
 
-### B27 自定义状态屏（128×64 单色）
+### B28 自定义状态屏（128×64 单色）
 
 ```text
 ┌────────────────────────────────────┐
-│ USB        12>MENU           +87% │  ← 10px：输出通道 | 操作提示 | 电量百分比
+│        USB ⇄ K1+K2>MENU      +87% │  ← 顶栏 10px：中部每 1.5s 交替，右侧电量常显
 ├────────────────────────────────────┤
 │      C+C      │      C+V          │
 │               │                   │  ← 四象限键位，中央十字分隔
@@ -62,7 +63,7 @@
 └────────────────────────────────────┘
 ```
 
-- **顶栏提示**：Default 页显示 `12>MENU`（按 K1+K2 进菜单）；子页面显示 `K4>HOME`。B25 的层名已去掉——看四象限键位内容即可判断当前页，把宝贵的顶栏宽度让给提示和大字体。
+- **顶栏交替显示**（B28）：中部每 1.5s 在「连接状态 `USB/BLE/---`」和「操作提示 `K1+K2>MENU` / `K4>HOME`」之间切换，右侧电量 `+87%` 常显。B27 三者同排时提示显示不全，交替后独占整行。层名仍不显示——看四象限键位即可判断当前页。
 - **颜色极性**（B25 修复，保留）：overlay 的 `com-invdir` 让 LVGL `black` = 硬件点亮，代码统一走 `PIXEL_ON()/PIXEL_OFF()` 宏，避免写反导致"字全灭只剩暗纹"。
 - **省电**：默认只有文字 + 1px 十字线点亮；按下不改背景，只加 `>` 前缀。
 
@@ -71,7 +72,7 @@
 - **支持在线改键**：ZMK Studio 改键、改层名、重排层后，屏幕 200 ms 内自动同步（层名来自 `zmk_keymap_layer_name()`，标签解析的是同一份运行时 keymap）。刷新跑在 ZMK 显示工作队列里（`k_work` + `zmk_display_work_q()`），LVGL 调用线程安全。
 - 顶栏：`zmk_endpoint_get_selected()` → `USB / BLE / ---`；`zmk_battery_state_of_charge()` → 百分比，`+` 前缀表示 USB 供电中。
 - 按下标记：订阅 `zmk_position_state_changed`，只写标志，显示队列里给标签加 `>` 前缀。
-- 字体：键位 14px、顶栏 **10px**（`lv_font_montserrat_10/14`，ASCII 纯文本；B26 顶栏为 12px，B27 按用户反馈降一档）；空闲自动熄屏、按键唤醒沿用 ZMK 默认行为。
+- 字体：键位 **12px**、顶栏 **10px**（`lv_font_montserrat_10/12`，ASCII 纯文本；B27 为 14px 键位 + 12px 顶栏，B28 按用户反馈都调小）；空闲自动熄屏、按键唤醒沿用 ZMK 默认行为。
 
 ### 输出与 Studio
 
@@ -181,6 +182,17 @@ CONFIG_LV_Z_BITS_PER_PIXEL=1
 
 > 不建议：串口 DFU（`adafruit-nrfutil`，数据流必挂）、资源管理器拖拽（曾静默失败）。
 > 刷写不擦除 NVS，蓝牙配对与 Studio 改键会保留。
+
+**清空 NVS（蓝牙彻底重置，B28 新增）**
+
+普通固件刷写**不会**清 settings；这一路刷了十几个测试固件，NVS 里会堆积旧 bond、首选输出、Studio 改键和层顺序，表现为蓝牙连不上或连上就断。ZMK 官方给的标准做法是一次性 `settings_reset` 固件：
+
+1. `build.yaml` 已加第二个构建项 `shield: settings_reset`，Actions 会同时产出两个 UF2：`fourkey_oled-nice_nano@2.0.0__zmk-zmk.uf2` 和 `settings_reset-nice_nano@2.0.0__zmk-zmk.uf2`。
+2. **先刷 `settings_reset-...uf2`**：它启动时清空整个 settings 分区，并刻意关掉 BLE 和显示，防止清完立刻写回。⚠️ 这个固件**不能长期使用**——每次启动都会清空。
+3. 等几秒，**再双击 RST 进 UF2，刷回 `fourkey_oled-...uf2` 正常固件**。
+4. 在电脑/手机侧删除 "FourKey OLED" 的蓝牙记录，重新搜索配对（两侧必须一致）。
+
+> 如果只是 Studio 改键残留（蓝牙正常），直接在 Studio 点 *Restore Stock Settings* 即可，不必刷重置固件。
 
 **抓启动日志（默认关闭）**：B23 起为了不让两个 CDC 串口干扰 Studio，USB 日志默认关闭，overlay 里的 `cdc_acm_uart0` 节点也一并移除。需要抓日志时临时恢复：
 

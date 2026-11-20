@@ -1,6 +1,7 @@
 # fourkey_oled · 四键蓝牙键盘 ZMK 固件
 
-> **当前状态（2026-11-20，B30）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
+> **当前状态（2026-11-20，B31）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
+> **B31 蓝牙显示简化**：蓝牙精简为 **2 档**（删掉 Fn 页的 BT_SEL 2）；键位标签极简（`B0/B1`=选档、`CLR`=清配对，修掉"bluetooth"全称放不下的 bug）；**顶栏 BLE 时显示当前档位 `B0/B1`**，选档后短暂弹 `B<n> OK` 反馈。
 > **B29 蓝牙回退到 B24 已知正常基线**：用户确认 B24 蓝牙正常，B26/B27 为"修蓝牙"加的两处 combo 与两个 BLE 实验开关经证实是回归源，已全部移除（详见第 2、3 节）。仅保留 combo 100ms 与界面改进。
 > **B30 顶栏状态修正（仅显示，不改蓝牙行为）**：旧逻辑在"当前无连接"时拿 preferred_transport 兜底，而 ZMK 默认 preferred=USB，导致拔掉 USB、BLE 又没连上时屏幕仍显示 `USB`，误导判断。B30 改为只显示**真正连接的通道**：`USB` / `BLE` / `----`（未连）。现状诊断：B29 与 B24 的 BLE 代码完全等价，"连上就断 + 沿用旧配对记录"是**两侧 bond 不一致**（电脑侧旧密钥），须两端清配对重配，非固件问题（详见第 3 节）。
 > B29 界面：顶栏 10px，**左侧**在「连接状态 / 操作提示」间每 1.5s 交替（**左对齐**，解决提示被右侧电量遮住导致的 `K1+K4` 残缺、`+100%` 显示不全），右侧电量常显；四象限键位 **12px**，十字分隔省电，标签从**运行时 keymap** 读取。
@@ -36,9 +37,11 @@
 | 1 | **Menu**（菜单） | → Num | → Media | → Sys | → Home |
 | 2 | **Num** | 1 | 2 | 3 | → Home |
 | 3 | **Media** | Vol− | Vol+ | Mute | → Home |
-| 4 | **Sys** | BLE 配置 0 | BLE 配置 1 | → Fn | → Home |
-| 5 | **Fn** | 解锁 Studio | 清除配对 | BLE 配置 2 | → Home |
+| 4 | **Sys** | 蓝牙档 0（B0） | 蓝牙档 1（B1） | → Fn | → Home |
+| 5 | **Fn** | 解锁 Studio | 清除配对（CLR） | （空） | → Home |
 | 6,7 | reserved | — | — | — | — |
+
+> **B31 蓝牙只有 2 档**：Sys 页 K1/K2 选 B0/B1；Fn 页 K3 原来的"蓝牙档 2"已删除（改为空）。Fn 页 K2 的清配对（CLR）保留——它是排障必需的清 bond 操作，不算蓝牙档位。
 
 - **进菜单**：在 Default 页同时按 K1+K2（combo `timeout-ms=100`、`require-prior-idle-ms=80`）。B24/B25 曾用 30ms，短于人手同步两键的时间，经常只按出一个键 → 进不了菜单、后续整串操作失效；B26 起改 100ms 并保留。
 - **回主页面**：任何子页面按 K4（`&to 0`）。
@@ -71,7 +74,8 @@
 - 实现：`config/boards/shields/fourkey_oled/custom_status_screen.c`；`CONFIG_ZMK_DISPLAY_STATUS_SCREEN_CUSTOM=y` 覆盖 `app/src/display/main.c` 的 weak `zmk_display_status_screen()`。
 - **键位准确性**：卡片文字不是写死的「层号→标签」表，而是每 200 ms 调用官方 `zmk_keymap_get_layer_binding_at_idx(layer_id, position)` 读运行时 `behavior_dev / param1 / param2`，再渲染成短标签（`C+C`、`->Num`、`BT0`、`Alt+Tab` …）。`&trans` 会按 ZMK 派发逻辑向下一层解析；未知 behavior 直接显示设备名或十六进制 usage，宁可朴素也不报错信息。
 - **支持在线改键**：ZMK Studio 改键、改层名、重排层后，屏幕 200 ms 内自动同步（层名来自 `zmk_keymap_layer_name()`，标签解析的是同一份运行时 keymap）。刷新跑在 ZMK 显示工作队列里（`k_work` + `zmk_display_work_q()`），LVGL 调用线程安全。
-- 顶栏：**B30 起**只读 `zmk_endpoint_get_selected().transport` → `USB / BLE / ----`（真正连接的通道；未连显示 `----`）。B29 及以前在 `NONE` 时用 `zmk_endpoint_get_preferred_transport()` 兜底，而 ZMK 默认 preferred=USB，导致"拔掉 USB、BLE 又没连"时误显示 `USB`——那是首选不是实连，已修正。`zmk_battery_state_of_charge()` → 百分比，`+` 前缀表示 USB 供电中。
+- 顶栏：**B31** 只读 `zmk_endpoint_get_selected().transport` → `USB / B0 / B1 / ----`（真正连接的通道，BLE 时直接显示当前档位号；未连显示 `----`）。选档后收到 `zmk_ble_active_profile_changed` 事件，顶栏临时弹 `B<n> OK` 约 2s 作反馈。**B30** 修正了"拔线误显示 USB"（旧逻辑在 NONE 时用 preferred 兜底，而 ZMK 默认 preferred=USB，显示的是首选不是实连）。`zmk_battery_state_of_charge()` → 百分比，`+` 前缀表示 USB 供电中。
+- **键位标签（B31 极简）**：蓝牙行为统一渲染成 `B0`/`B1`（选档）、`CLR`（清配对）、`NXT`/`PRV`/`DISC` 等 2~4 字符短标签。修掉了"bluetooth"一词无连续 `bt` 子串、匹配失败后把整个设备名打出来（超长、看不出功能）的 bug——现在 `bluetooth`/`blue`/`behavior_bt` 都显式纳入匹配。
 - 按下标记：订阅 `zmk_position_state_changed`，只写标志，显示队列里给标签加 `>` 前缀。
 - 字体：键位 **12px**、顶栏 **10px**（`lv_font_montserrat_10/12`，ASCII 纯文本；B27 为 14px 键位 + 12px 顶栏，B28 按用户反馈都调小）；空闲自动熄屏、按键唤醒沿用 ZMK 默认行为。
 

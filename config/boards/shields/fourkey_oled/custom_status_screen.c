@@ -1,5 +1,12 @@
 /*
- * fourkey_oled - B30 状态屏（128x64 单色 SSD1306）
+ * fourkey_oled - B31 状态屏（128x64 单色 SSD1306）
+ *
+ * B31 蓝牙显示简化（用户反馈）：
+ *   1) 蓝牙只保留 2 档（Sys K1=BT_SEL0、K2=BT_SEL1），删除 Fn 的 BT_SEL2。
+ *   2) 键位标签极简：B0/B1=选档、CLR=清配对、NXT/PRV/DISC…；并修正
+ *      "bluetooth" 无 "bt" 子串导致匹配失败、把整个设备名打出来的 bug。
+ *   3) 顶栏 BLE 连接时显示当前档位 B0/B1（zmk_ble_active_profile_index）。
+ *   4) 选档后触发 ble_active_profile_changed -> 顶栏短暂显示 "B<n> OK" 反馈。
  *
  * 布局（B26 按用户反馈重构）：
  *   y=0..12   顶栏 10px：左=连接状态/操作提示交替闪烁（1.5s），右=电量百分比
@@ -46,6 +53,8 @@
 #include <zmk/endpoints.h>
 #include <zmk/endpoints_types.h>
 #include <zmk/usb.h>
+#include <zmk/ble.h>
+#include <zmk/events/ble_active_profile_changed.h>
 
 #define KEY_COUNT 4
 #define LABEL_CAP 16
@@ -69,6 +78,12 @@ static char cache_banner[16];
 static char cache_bat[8];
 static char cache_keys[KEY_COUNT][LABEL_CAP];
 static volatile bool key_down[KEY_COUNT];
+
+/* B31：选档反馈——收到 ble_active_profile_changed 后，顶栏临时显示 "B<n> OK"
+   约 2s 再回到常态；用 uptime 计时，跑在显示工作队列里，无锁。 */
+#define BT_HINT_MS 2000U
+static volatile uint32_t bt_hint_until;
+static volatile uint8_t bt_hint_index;
 
 /* ---------- 小工具 ---------- */
 
@@ -207,15 +222,20 @@ static void render_binding(const struct zmk_behavior_binding *b, char *out, size
         snprintf(out, cap, "TG %.7s", layer_name_for((uint8_t)b->param1));
         return;
     }
-    if (ieq(leaf, "bt") || ieq(leaf, "behavior_bt") || strstr(leaf, "bt") != NULL) {
+    /* B31：bluetooth 一词里没有连续的 "bt" 子串，旧的 strstr(leaf,"bt")
+       匹配不到它，会掉到末尾兜底把整个设备名打出来（"bluetooth..." 太长、
+       看不出功能）。这里把 bluetooth / blue / behavior_bt 都显式纳入，
+       并统一渲染成极短标签：B0/B1=选档，CLR=清配对，其余同理。 */
+    if (ieq(leaf, "bt") || ieq(leaf, "behavior_bt") ||
+        strstr(leaf, "bt") != NULL || strstr(leaf, "blue") != NULL) {
         switch (b->param1) {
-        case 3:  snprintf(out, cap, "BT%u", (unsigned)b->param2); break;
-        case 0:  snprintf(out, cap, "BT CLR"); break;
-        case 1:  snprintf(out, cap, "BT NXT"); break;
-        case 2:  snprintf(out, cap, "BT PRV"); break;
-        case 4:  snprintf(out, cap, "CLRA"); break;
-        case 5:  snprintf(out, cap, "DISC"); break;
-        default: snprintf(out, cap, "BT %u", (unsigned)b->param1); break;
+        case 3:  snprintf(out, cap, "B%u", (unsigned)b->param2); break; /* BT_SEL */
+        case 0:  snprintf(out, cap, "CLR"); break;                      /* BT_CLR */
+        case 1:  snprintf(out, cap, "NXT"); break;                      /* BT_NXT */
+        case 2:  snprintf(out, cap, "PRV"); break;                      /* BT_PRV */
+        case 4:  snprintf(out, cap, "CLRA"); break;                     /* CLR_ALL */
+        case 5:  snprintf(out, cap, "DISC"); break;                     /* DISCONNECT */
+        default: snprintf(out, cap, "B?%u", (unsigned)b->param1); break;
         }
         return;
     }
@@ -289,34 +309,44 @@ static void refresh_ui(void) {
     /* B28：顶栏中部在「连接状态」和「操作提示」之间每 1.5s 交替。
        原来三者同排，10px 下 "K1+K2>MENU" 显示不全；交替后独占整行。 */
     /* B30：只显示真正连接的通道，不再用 preferred 兜底。
-       selected==NONE（拔掉 USB 且 BLE 未连）时显示 "----"，不再谎报 "USB"。 */
+       B31：BLE 时显示当前档位 B0/B1（zmk_ble_active_profile_index），
+       一眼看出连的是哪个蓝牙配置；USB 显示 USB，未连显示 ----。 */
     enum zmk_transport transport = zmk_endpoint_get_selected().transport;
     char out[8];
     switch (transport) {
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+    case ZMK_TRANSPORT_BLE:
+        snprintf(out, sizeof(out), "B%d", zmk_ble_active_profile_index());
+        break;
+#endif
     case ZMK_TRANSPORT_USB: snprintf(out, sizeof(out), "USB"); break;
-    case ZMK_TRANSPORT_BLE: snprintf(out, sizeof(out), "BLE"); break;
     default:                snprintf(out, sizeof(out), "----"); break;
     }
 
-    static uint32_t banner_last_toggle;
-    static bool banner_show_hint;
     uint32_t now = k_uptime_get_32();
-    if (now - banner_last_toggle >= 1500U) {
-        banner_show_hint = !banner_show_hint;
-        banner_last_toggle = now;
-    }
 
     char banner[16];
-    if (banner_show_hint) {
-        if (layer_id == zmk_keymap_layer_default()) {
-            snprintf(banner, sizeof(banner), "K1+K2>MENU");
-        } else if (is_to_layer(effective_binding(3), zmk_keymap_layer_default())) {
-            snprintf(banner, sizeof(banner), "K4>HOME");
-        } else {
-            snprintf(banner, sizeof(banner), "K1+K2>MENU");
-        }
+    /* 选档后 2s 内优先显示反馈（如 "B0 OK"），再回到常态交替 */
+    if ((int32_t)(bt_hint_until - now) > 0) {
+        snprintf(banner, sizeof(banner), "B%u OK", (unsigned)bt_hint_index);
     } else {
-        snprintf(banner, sizeof(banner), "%s", out);
+        static uint32_t banner_last_toggle;
+        static bool banner_show_hint;
+        if (now - banner_last_toggle >= 1500U) {
+            banner_show_hint = !banner_show_hint;
+            banner_last_toggle = now;
+        }
+        if (banner_show_hint) {
+            if (layer_id == zmk_keymap_layer_default()) {
+                snprintf(banner, sizeof(banner), "K1+K2>MENU");
+            } else if (is_to_layer(effective_binding(3), zmk_keymap_layer_default())) {
+                snprintf(banner, sizeof(banner), "K4>HOME");
+            } else {
+                snprintf(banner, sizeof(banner), "K1+K2>MENU");
+            }
+        } else {
+            snprintf(banner, sizeof(banner), "%s", out);
+        }
     }
     set_text(banner_label, cache_banner, sizeof(cache_banner), banner);
 
@@ -357,6 +387,21 @@ static int position_listener_cb(const zmk_event_t *eh) {
 }
 ZMK_LISTENER(fourkey_screen, position_listener_cb);
 ZMK_SUBSCRIPTION(fourkey_screen, zmk_position_state_changed);
+
+/* B31：蓝牙选档事件 -> 顶栏短暂显示 "B<n> OK" 反馈 */
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+static int ble_profile_listener_cb(const zmk_event_t *eh) {
+    const struct zmk_ble_active_profile_changed *ev =
+        as_zmk_ble_active_profile_changed(eh);
+    if (ev != NULL) {
+        bt_hint_index = ev->index;
+        bt_hint_until = k_uptime_get_32() + BT_HINT_MS;
+    }
+    return ZMK_EV_EVENT_BUBBLE;
+}
+ZMK_LISTENER(fourkey_ble_hint, ble_profile_listener_cb);
+ZMK_SUBSCRIPTION(fourkey_ble_hint, zmk_ble_active_profile_changed);
+#endif
 
 /* ---------- 建屏 ---------- */
 static lv_obj_t *make_label(lv_obj_t *parent, const char *text,
@@ -399,7 +444,7 @@ lv_obj_t *zmk_display_status_screen(void) {
     /* 顶栏 10px：左侧交替显示连接状态/提示（左对齐，避免与电量重叠），
        右侧电量常显。10px 下 "+100%" 约 6 字符 ≈ 36px，从右边缘 -1 起，
        左侧 banner 最长 "K1+K2>MENU" 约 10 字符 ≈ 60px，二者不重叠。 */
-    banner_label = make_label(screen, "USB", FONT_TOP, PIXEL_ON());
+    banner_label = make_label(screen, "----", FONT_TOP, PIXEL_ON());
     lv_obj_align(banner_label, LV_ALIGN_TOP_LEFT, 2, 0);
 
     bat_label = make_label(screen, "--%", FONT_TOP, PIXEL_ON());

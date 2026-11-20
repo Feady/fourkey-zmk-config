@@ -2,8 +2,9 @@
  * fourkey_oled - B26 状态屏（128x64 单色 SSD1306）
  *
  * 布局（B26 按用户反馈重构）：
- *   y=0..12   顶栏 10px：中=连接状态/操作提示交替闪烁（1.5s），右=电量百分比
- *             （去掉层名——看四象限的键位内容即可知道当前在哪一层）
+ *   y=0..12   顶栏 10px：左=连接状态/操作提示交替闪烁（1.5s），右=电量百分比
+ *             （B29：banner 改左对齐——居中时 "K1+K2>MENU" 尾部与右侧
+ *               "+100%" 重叠被遮，才出现"K1+K4 显示不全/电量缺字"）
  *   y=13      分隔线
  *   y=15..63  四象限键位区：中间一个十字分隔（不再给每个键画边框，省电）
  *             K1 左上 / K2 右上 / K3 左下 / K4 右下，12px 字体（B28 缩小）
@@ -48,7 +49,7 @@
 #define FONT_TOP  &lv_font_montserrat_10
 
 /* ---------- LVGL 对象 ---------- */
-static lv_obj_t *banner_label;  /* 顶栏中部：连接状态/提示交替闪烁 */
+static lv_obj_t *banner_label;  /* 顶栏左侧：连接状态/提示交替闪烁（左对齐） */
 static lv_obj_t *bat_label;
 static lv_obj_t *key_labels[KEY_COUNT];
 static lv_style_t screen_style;
@@ -386,12 +387,14 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_add_style(screen, &screen_style, LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 顶栏 10px：中部交替显示连接状态/提示，右侧电量常显 */
+    /* 顶栏 10px：左侧交替显示连接状态/提示（左对齐，避免与电量重叠），
+       右侧电量常显。10px 下 "+100%" 约 6 字符 ≈ 36px，从右边缘 -1 起，
+       左侧 banner 最长 "K1+K2>MENU" 约 10 字符 ≈ 60px，二者不重叠。 */
     banner_label = make_label(screen, "USB", FONT_TOP, PIXEL_ON());
-    lv_obj_align(banner_label, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_align(banner_label, LV_ALIGN_TOP_LEFT, 2, 0);
 
     bat_label = make_label(screen, "--%", FONT_TOP, PIXEL_ON());
-    lv_obj_align(bat_label, LV_ALIGN_TOP_RIGHT, -2, 0);
+    lv_obj_align(bat_label, LV_ALIGN_TOP_RIGHT, -1, 0);
 
     /* 顶栏分隔线 */
     make_line(screen, 2, 13, 124, 1);

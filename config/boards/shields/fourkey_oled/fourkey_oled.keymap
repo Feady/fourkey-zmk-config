@@ -1,5 +1,5 @@
 /*
- * fourkey_oled keymap - B26「层即页面」
+ * fourkey_oled keymap - B29「层即页面」(蓝牙回退到 B24 基线)
  *
  * 物理布局：2×2 直连按键（先第一排从左到右，再第二排）
  *   ┌──────────┬──────────┐
@@ -8,19 +8,17 @@
  *   │ K3 左下  │ K4 右下  │
  *   └──────────┴──────────┘
  *
- * B26 变更（针对"蓝牙键无效果 / 子层按键无效"）：
- *  1) combo timeout 30ms -> 100ms。官方示例 50ms，30ms 对手指太短，
- *     K1+K2 经常只按出一个键，进不了 Menu 页，导致后面整串操作失效。
- *  2) 新增 combo K3+K4 = &out OUT_BLE（强制首选 BLE）。
- *     ZMK 的 preferred transport 存在 NVS，插着 USB 时被存成 USB；
- *     拔线后 fallback 依赖 BLE profile 已连接，没连上就整个 endpoint=NONE，
- *     所有键（包括蓝牙键）看起来都没效果。OUT_BLE 直接把首选切到 BLE。
- *  3) 出蓝牙页多一条路：Default 页 K3+K4 = OUT_BLE 广播等配对。
- *
- * B27 变更（针对"蓝牙连不上、连上很快断"）：
- *  4) 新增 combo K1+K4 = BT_SEL 0 + BT_CLR，一键清掉 profile 0 的残留配对。
- *  5) conf 开 ZMK_BLE_EXPERIMENTAL_CONN（禁 2M PHY）与
- *     BT_SMP_ALLOW_UNAUTH_OVERWRITE（允许同主机覆盖旧 bond）。
+ * B29 变更 —— 蓝牙回退到 B24（用户确认 B24 蓝牙正常）：
+ *   B26/B27 为"修蓝牙"加的三处改动是回归源，全部移除：
+ *   1) combo_btclr (K1+K4 = BT_SEL 0 + BT_CLR)：日常 Ctrl+C→Alt+Tab
+ *      切换窗口时，K1 后紧接 K4 会在 combo 窗口内误触发清配对，
+ *      bond 被反复清掉 → 表现就是"连上就断/连不上"。
+ *   2) combo_ble (K3+K4 = OUT_BLE)：Ctrl+D→Alt+Tab 误触发会把正在用的
+ *      USB 输出强制切到 BLE → 键盘无响应。
+ *   3) conf 里的 ZMK_BLE_EXPERIMENTAL_CONN / BT_SMP_ALLOW_UNAUTH_OVERWRITE
+ *      两个实验开关，B24 均未开启也能正常配对连接，一并移除。
+ *   Fn 页 K3 恢复为 &bt BT_SEL 2（B24 原样）。
+ *   仅保留 combo_menu timeout=100ms（与蓝牙无关，改善进菜单手感）。
  *
  * 屏幕上的 2×2 键位标签由 custom_status_screen.c 运行时读取本文件
  * （以及 ZMK Studio 保存的在线改键）生成，改键后屏幕自动同步。
@@ -33,44 +31,20 @@
 #include <behaviors.dtsi>
 #include <dt-bindings/zmk/keys.h>
 #include <dt-bindings/zmk/bt.h>
-#include <dt-bindings/zmk/outputs.h>
 
 / {
     combos {
         compatible = "zmk,combos";
 
         /* 逻辑功能键：K1+K2 = 打开菜单页。
-           timeout-ms=100：给手指足够的同步窗口（官方示例 50ms）。
-           require-prior-idle-ms=80 防止连续快速按 K1、K2 时误触发。 */
+           layers = <0> 只在 Default 页生效；require-prior-idle-ms 防止
+           连续快速按 K1、K2 时误触发（官方文档 combos.md）。 */
         combo_menu {
             timeout-ms = <100>;
             require-prior-idle-ms = <80>;
             key-positions = <0 1>;
             layers = <0>;
             bindings = <&to 1>;
-        };
-
-        /* 强制切到 BLE 输出：只在 Default 页生效。
-           解决"拔 USB 后连不上蓝牙、按键全无效"——把首选输出从
-           残留的 USB 改成 BLE，ZMK 随即广播/回连已配对主机。 */
-        combo_ble {
-            timeout-ms = <100>;
-            require-prior-idle-ms = <80>;
-            key-positions = <2 3>;
-            layers = <0>;
-            bindings = <&out OUT_BLE>;
-        };
-
-        /* B27 兜底：K1+K4 = 选中 profile 0 并清除它的 bond。
-           用于"蓝牙连上马上断"——NVS 里残留旧配对时 ZMK 会拒绝新主机配对。
-           清完还必须**在电脑/手机侧删除该设备的蓝牙记录**再重新配对，
-           两侧密钥必须一致（ZMK 官方文档明确要求）。 */
-        combo_btclr {
-            timeout-ms = <100>;
-            require-prior-idle-ms = <80>;
-            key-positions = <0 3>;
-            layers = <0>;
-            bindings = <&bt BT_SEL 0>, <&bt BT_CLR>;
         };
     };
 
@@ -141,7 +115,7 @@
             display-name = "Fn";
             bindings = <
                 &studio_unlock  &bt BT_CLR
-                &out OUT_USB    &to 0
+                &bt BT_SEL 2    &to 0
             >;
         };
 

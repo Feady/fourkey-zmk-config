@@ -2,7 +2,7 @@
  * fourkey_oled - B26 状态屏（128x64 单色 SSD1306）
  *
  * 布局（B26 按用户反馈重构）：
- *   y=0..12   顶栏 12px：左=USB/BLE，中=操作提示，右=电量百分比
+ *   y=0..12   顶栏 10px：左=USB/BLE，中=操作提示，右=电量百分比
  *             （去掉层名——看四象限的键位内容即可知道当前在哪一层）
  *   y=13      分隔线
  *   y=15..63  四象限键位区：中间一个十字分隔（不再给每个键画边框，省电）
@@ -45,7 +45,7 @@
 #define PIXEL_OFF() lv_color_white()
 
 #define FONT_KEY  &lv_font_montserrat_14
-#define FONT_TOP  &lv_font_montserrat_12
+#define FONT_TOP  &lv_font_montserrat_10
 
 /* ---------- LVGL 对象 ---------- */
 static lv_obj_t *out_label;
@@ -290,7 +290,7 @@ static void refresh_ui(void) {
 #endif
     set_text(bat_label, cache_bat, sizeof(cache_bat), bat);
 
-    /* 顶部提示：12px 空间有限，用紧凑写法（12>MENU = 按 K1+K2 进菜单）*/
+    /* 顶部提示：10px 空间有限，用紧凑写法（12>MENU = 按 K1+K2 进菜单）*/
     char hint[16];
     if (layer_id == zmk_keymap_layer_default()) {
         snprintf(hint, sizeof(hint), "12>MENU");

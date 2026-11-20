@@ -17,6 +17,11 @@
  *     所有键（包括蓝牙键）看起来都没效果。OUT_BLE 直接把首选切到 BLE。
  *  3) 出蓝牙页多一条路：Default 页 K3+K4 = OUT_BLE 广播等配对。
  *
+ * B27 变更（针对"蓝牙连不上、连上很快断"）：
+ *  4) 新增 combo K1+K4 = BT_SEL 0 + BT_CLR，一键清掉 profile 0 的残留配对。
+ *  5) conf 开 ZMK_BLE_EXPERIMENTAL_CONN（禁 2M PHY）与
+ *     BT_SMP_ALLOW_UNAUTH_OVERWRITE（允许同主机覆盖旧 bond）。
+ *
  * 屏幕上的 2×2 键位标签由 custom_status_screen.c 运行时读取本文件
  * （以及 ZMK Studio 保存的在线改键）生成，改键后屏幕自动同步。
  *
@@ -54,6 +59,18 @@
             key-positions = <2 3>;
             layers = <0>;
             bindings = <&out OUT_BLE>;
+        };
+
+        /* B27 兜底：K1+K4 = 选中 profile 0 并清除它的 bond。
+           用于"蓝牙连上马上断"——NVS 里残留旧配对时 ZMK 会拒绝新主机配对。
+           清完还必须**在电脑/手机侧删除该设备的蓝牙记录**再重新配对，
+           两侧密钥必须一致（ZMK 官方文档明确要求）。 */
+        combo_btclr {
+            timeout-ms = <100>;
+            require-prior-idle-ms = <80>;
+            key-positions = <0 3>;
+            layers = <0>;
+            bindings = <&bt BT_SEL 0>, <&bt BT_CLR>;
         };
     };
 

@@ -1,28 +1,22 @@
 /*
- * fourkey_oled - B25 状态屏（128x64 单色 SSD1306）
+ * fourkey_oled - B26 状态屏（128x64 单色 SSD1306）
  *
- * 布局：
- *   y=1..11   顶栏：USB/BLE | 当前层名 | +87%（+ 表示 USB 供电中）
- *   y=12      分隔线
- *   y=15..55  2x2 键位卡片（60x20），位置与实物一一对应
- *   y=57..64  底部提示（K1+K2=MENU / K4=HOME）
+ * 布局（B26 按用户反馈重构）：
+ *   y=0..12   顶栏 12px：左=USB/BLE，中=操作提示，右=电量百分比
+ *             （去掉层名——看四象限的键位内容即可知道当前在哪一层）
+ *   y=13      分隔线
+ *   y=15..63  四象限键位区：中间一个十字分隔（不再给每个键画边框，省电）
+ *             K1 左上 / K2 右上 / K3 左下 / K4 右下，14px 大字体
+ *             按下只在文字前加 ">" 标记，不整块反白
  *
- * ★ 颜色极性（B25 关键修复）--------------------------------------------
+ * ★ 颜色极性（B25 修复，保留）--------------------------------------------
  * overlay 里 SSD1306 配了 com-invdir，硬件像素极性与 LVGL 相反：
  *     LVGL white(1) -> 像素熄灭(暗)     LVGL black(0) -> 像素点亮(亮)
- * B24 直接写 white 字 / black 底，结果文字全灭、背景全亮：
- * 顶栏/电量看不到、卡片只剩暗横纹，按下反色后黑字点亮才显出来。
- * 本文件统一用 PIXEL_ON()/PIXEL_OFF() 宏，杜绝写反。
+ * 统一用 PIXEL_ON()/PIXEL_OFF() 宏，杜绝写反。
  * 若将来去掉 overlay 的 com-invdir，把两个宏对调即可。
  *
- * 省电：默认只有文字 + 1px 边框点亮；按下只给标签加 ">" 前缀，
- *       不再整块 60x20 反白（OLED 点亮像素才耗电）。
- *
  * 键位标签来自运行时 keymap（zmk_keymap_get_layer_binding_at_idx），
- * Studio 在线改键/改名后 200ms 内自动同步，不说谎。
- *
- * 参考：ZMK 官方 app/boards/shields/nice_view/、
- *       englmaxi/zmk-dongle-display（大字体 + 显式样式范例）
+ * Studio 在线改键/改名/重排层后 200ms 内自动同步，不说谎。
  */
 
 #include <ctype.h>
@@ -51,22 +45,19 @@
 #define PIXEL_OFF() lv_color_white()
 
 #define FONT_KEY  &lv_font_montserrat_14
-#define FONT_TOP  &lv_font_montserrat_8
+#define FONT_TOP  &lv_font_montserrat_12
 
 /* ---------- LVGL 对象 ---------- */
 static lv_obj_t *out_label;
-static lv_obj_t *layer_label;
-static lv_obj_t *bat_label;
 static lv_obj_t *hint_label;
-static lv_obj_t *cards[KEY_COUNT];
+static lv_obj_t *bat_label;
 static lv_obj_t *key_labels[KEY_COUNT];
 static lv_style_t screen_style;
 
 /* ---------- 缓存：只有文本真的变了才动 LVGL ---------- */
-static char cache_layer[12];
 static char cache_out[8];
 static char cache_bat[8];
-static char cache_hint[24];
+static char cache_hint[16];
 static char cache_keys[KEY_COUNT][LABEL_CAP];
 static volatile bool key_down[KEY_COUNT];
 
@@ -213,8 +204,8 @@ static void render_binding(const struct zmk_behavior_binding *b, char *out, size
         case 0:  snprintf(out, cap, "BT CLR"); break;
         case 1:  snprintf(out, cap, "BT NXT"); break;
         case 2:  snprintf(out, cap, "BT PRV"); break;
-        case 4:  snprintf(out, cap, "BT CLRA"); break;
-        case 5:  snprintf(out, cap, "BT DISC"); break;
+        case 4:  snprintf(out, cap, "CLRA"); break;
+        case 5:  snprintf(out, cap, "DISC"); break;
         default: snprintf(out, cap, "BT %u", (unsigned)b->param1); break;
         }
         return;
@@ -225,7 +216,13 @@ static void render_binding(const struct zmk_behavior_binding *b, char *out, size
     if (strstr(leaf, "bootloader"))   { snprintf(out, cap, "Boot"); return; }
     if (strstr(leaf, "reset"))        { snprintf(out, cap, "Reset"); return; }
     if (ieq(leaf, "outputs") || ieq(leaf, "out")) {
-        snprintf(out, cap, "OUT%u", (unsigned)b->param1);
+        switch (b->param1) {
+        case 1:  snprintf(out, cap, "USB OUT"); break;
+        case 2:  snprintf(out, cap, "BLE OUT"); break;
+        case 0:  snprintf(out, cap, "TOG OUT"); break;
+        case 3:  snprintf(out, cap, "NO OUT"); break;
+        default: snprintf(out, cap, "OUT%u", (unsigned)b->param1); break;
+        }
         return;
     }
     snprintf(out, cap, "%.13s", leaf);
@@ -256,16 +253,19 @@ static void set_text(lv_obj_t *label, char *cache, size_t cap, const char *text)
     lv_label_set_text(label, cache);
 }
 
+static bool is_to_layer(const struct zmk_behavior_binding *b, uint8_t layer_id) {
+    if (b == NULL || b->behavior_dev == NULL) {
+        return false;
+    }
+    const char *leaf = dev_leaf(b->behavior_dev);
+    return (ieq(leaf, "to_layer") || ieq(leaf, "to")) &&
+           (b->param1 == (uint32_t)layer_id);
+}
+
 /* ---------- 刷新：跑在 ZMK 显示工作队列里 ---------- */
 static void refresh_ui(void) {
-    /* 当前层 */
-    zmk_keymap_layer_index_t index = zmk_keymap_highest_layer_active();
-    zmk_keymap_layer_id_t layer_id = zmk_keymap_layer_index_to_id(index);
-    const char *name = (layer_id == ZMK_KEYMAP_LAYER_ID_INVAL)
-                           ? NULL : zmk_keymap_layer_name(layer_id);
-    char layer[12];
-    snprintf(layer, sizeof(layer), "%.9s", (name && name[0]) ? name : "?");
-    set_text(layer_label, cache_layer, sizeof(cache_layer), layer);
+    zmk_keymap_layer_id_t layer_id =
+        zmk_keymap_layer_index_to_id(zmk_keymap_highest_layer_active());
 
     /* 输出状态 */
     enum zmk_transport transport = zmk_endpoint_get_selected().transport;
@@ -290,7 +290,18 @@ static void refresh_ui(void) {
 #endif
     set_text(bat_label, cache_bat, sizeof(cache_bat), bat);
 
-    /* 四个键位卡片：按下只在文字前加 '>'，不整块反白 */
+    /* 顶部提示：12px 空间有限，用紧凑写法（12>MENU = 按 K1+K2 进菜单）*/
+    char hint[16];
+    if (layer_id == zmk_keymap_layer_default()) {
+        snprintf(hint, sizeof(hint), "12>MENU");
+    } else if (is_to_layer(effective_binding(3), zmk_keymap_layer_default())) {
+        snprintf(hint, sizeof(hint), "K4>HOME");
+    } else {
+        snprintf(hint, sizeof(hint), "12>MENU");
+    }
+    set_text(hint_label, cache_hint, sizeof(cache_hint), hint);
+
+    /* 四个键位：按下只在文字前加 '>'，不整块反白 */
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
         char text[LABEL_CAP];
         render_binding(effective_binding(i), text, sizeof(text));
@@ -302,22 +313,6 @@ static void refresh_ui(void) {
         }
         set_text(key_labels[i], cache_keys[i], sizeof(cache_keys[i]), shown);
     }
-
-    /* 底部提示 */
-    char hint[24];
-    if (layer_id == zmk_keymap_layer_default()) {
-        snprintf(hint, sizeof(hint), "%s", "K1+K2=MENU");
-    } else {
-        const struct zmk_behavior_binding *k4 = effective_binding(3);
-        bool k4_is_home = false;
-        if (k4 != NULL && k4->behavior_dev != NULL) {
-            const char *leaf = dev_leaf(k4->behavior_dev);
-            k4_is_home = (ieq(leaf, "to_layer") || ieq(leaf, "to")) &&
-                         (k4->param1 == (uint32_t)zmk_keymap_layer_default());
-        }
-        snprintf(hint, sizeof(hint), "%s", k4_is_home ? "K4=HOME" : "K1+K2=MENU");
-    }
-    set_text(hint_label, cache_hint, sizeof(cache_hint), hint);
 }
 
 static void refresh_work_cb(struct k_work *work) {
@@ -356,6 +351,21 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *text,
     return label;
 }
 
+/* 1px 亮线：画十字分隔用 */
+static lv_obj_t *make_line(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
+                           lv_coord_t w, lv_coord_t h) {
+    lv_obj_t *line = lv_obj_create(parent);
+    lv_obj_set_size(line, w, h);
+    lv_obj_set_pos(line, x, y);
+    lv_obj_set_style_bg_color(line, PIXEL_ON(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(line, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(line, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(line, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(line, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(line, LV_OBJ_FLAG_SCROLLABLE);
+    return line;
+}
+
 lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_t *screen = lv_obj_create(NULL);
 
@@ -367,53 +377,33 @@ lv_obj_t *zmk_display_status_screen(void) {
     lv_obj_add_style(screen, &screen_style, LV_PART_MAIN);
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 顶栏：输出 | 层名 | 电量 */
+    /* 顶栏 12px：输出 | 提示 | 电量 */
     out_label = make_label(screen, "---", FONT_TOP, PIXEL_ON());
-    lv_obj_align(out_label, LV_ALIGN_TOP_LEFT, 2, 1);
+    lv_obj_align(out_label, LV_ALIGN_TOP_LEFT, 2, 0);
 
-    layer_label = make_label(screen, "?", FONT_TOP, PIXEL_ON());
-    lv_obj_align(layer_label, LV_ALIGN_TOP_MID, 0, 1);
+    hint_label = make_label(screen, "12>MENU", FONT_TOP, PIXEL_ON());
+    lv_obj_align(hint_label, LV_ALIGN_TOP_MID, 0, 0);
 
     bat_label = make_label(screen, "--%", FONT_TOP, PIXEL_ON());
-    lv_obj_align(bat_label, LV_ALIGN_TOP_RIGHT, -2, 1);
+    lv_obj_align(bat_label, LV_ALIGN_TOP_RIGHT, -2, 0);
 
-    /* 分隔线 */
-    lv_obj_t *line = lv_obj_create(screen);
-    lv_obj_set_size(line, 124, 1);
-    lv_obj_set_pos(line, 2, 12);
-    lv_obj_set_style_bg_color(line, PIXEL_ON(), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(line, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(line, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(line, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(line, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(line, LV_OBJ_FLAG_SCROLLABLE);
+    /* 顶栏分隔线 */
+    make_line(screen, 2, 13, 124, 1);
 
-    /* 2x2 键位卡片：60x20，14px 大字体 */
-    static const int16_t xs[2] = {2, 66};
-    static const int16_t ys[2] = {15, 36};
+    /* 中央十字：一竖一横，把四象限分开（取代四个格子边框，省电）*/
+    make_line(screen, 63, 15, 1, 48); /* 竖线 */
+    make_line(screen, 2, 39, 124, 1); /* 横线 */
+
+    /* 四象限键位标签，14px */
+    static const int16_t xs[2] = {3, 66};
+    static const int16_t ys[2] = {17, 42};
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
-        lv_obj_t *card = lv_obj_create(screen);
-        cards[i] = card;
-        lv_obj_set_size(card, 60, 20);
-        lv_obj_set_pos(card, xs[i % 2], ys[i / 2]);
-        lv_obj_set_style_pad_all(card, 0, LV_PART_MAIN);
-        lv_obj_set_style_radius(card, 0, LV_PART_MAIN);
-        lv_obj_set_style_border_width(card, 1, LV_PART_MAIN);
-        lv_obj_set_style_border_color(card, PIXEL_ON(), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_bg_color(card, PIXEL_OFF(), LV_PART_MAIN);
-        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-
-        lv_obj_t *label = make_label(card, "---", FONT_KEY, PIXEL_ON());
+        lv_obj_t *label = make_label(screen, "---", FONT_KEY, PIXEL_ON());
         key_labels[i] = label;
-        lv_obj_set_size(label, 58, 19);
+        lv_obj_set_size(label, 58, 20);
+        lv_obj_set_pos(label, xs[i % 2], ys[i / 2]);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-        lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
     }
-
-    /* 底部提示 */
-    hint_label = make_label(screen, "K1+K2=MENU", FONT_TOP, PIXEL_ON());
-    lv_obj_align(hint_label, LV_ALIGN_BOTTOM_LEFT, 2, -1);
 
     refresh_ui();
     k_timer_start(&refresh_timer, K_MSEC(REFRESH_MS), K_MSEC(REFRESH_MS));

@@ -1,10 +1,9 @@
 # fourkey_oled · 四键蓝牙键盘 ZMK 固件
 
-> **当前状态（2026-11-20，B28）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
-> B28 界面：顶栏 10px，中部在**连接状态 / 操作提示**之间每 1.5s 交替闪烁（解决 `K1+K2>MENU` 显示不全），右侧电量常显；四象限键位 **12px**（B27 为 14px），仍用十字分隔省电，标签从**运行时 keymap** 读取。
-> B28 蓝牙：新增官方 `settings_reset` 一次性固件，刷入后清空整个 NVS（bond / 首选输出 / Studio 改键 / 层顺序），再刷回正常固件重新配对。
-> B27 蓝牙稳定性：开 `ZMK_BLE_EXPERIMENTAL_CONN`（禁 2M PHY）+ `BT_SMP_ALLOW_UNAUTH_OVERWRITE`（同主机可覆盖旧 bond），新增 **K1+K4 = 清配对** 兜底。
-> B26 蓝牙/层修复：combo 超时 30→100ms（原太短进不了菜单）；新增 K3+K4 = `&out OUT_BLE` 强制切蓝牙，解决拔 USB 后首选输出残留 USB 导致按键全无效。
+> **当前状态（2026-11-20，B29）**：USB HID/BLE、4 键功能、Alt+Tab 宏、SSD1306 自定义屏、电量百分比、ZMK Studio 在线改键。
+> **B29 蓝牙回退到 B24 已知正常基线**：用户确认 B24 蓝牙正常，B26/B27 为"修蓝牙"加的两处 combo 与两个 BLE 实验开关经证实是回归源，已全部移除（详见第 2、3 节）。仅保留 combo 100ms 与界面改进。
+> B29 界面：顶栏 10px，**左侧**在「连接状态 / 操作提示」间每 1.5s 交替（**左对齐**，解决提示被右侧电量遮住导致的 `K1+K4` 残缺、`+100%` 显示不全），右侧电量常显；四象限键位 **12px**，十字分隔省电，标签从**运行时 keymap** 读取。
+> B28 保留：官方 `settings_reset` 一次性固件（清空 NVS，需要彻底重置蓝牙时用）；日常不再依赖它。
 > 硬件：SuperMini nRF52840（nice!nano v2 兼容克隆板）+ 4 键直连 + 0.96" I2C OLED + 锂电池。
 > 仓库：`https://github.com/Feady/fourkey-zmk-config`，固件经 GitHub Actions 编译，无需本地 Zephyr 环境。
 
@@ -24,9 +23,11 @@
 - **OLED**：I2C `0x3C`，SDA = D2/P0.17、SCL = D3/P0.20（nice!nano 的 `&pro_micro_i2c` 默认脚），128×64，SSD1306/SSD1315 家族。
 - 早期文档里的 D8/D5/D7/D6 引脚表已作废；P0.24 已从固件完全移除。
 
-## 2. 键位、层与组合键（B26「层即页面」）
+## 2. 键位、层与组合键（B29「层即页面」，蓝牙回退 B24）
 
-只有 4 个物理键，**不加第 5 个键**：用 `zmk,combos` 把 **K1+K2 同时按** 当作逻辑功能键（`&to 1` → Menu 页）。松开后页面保持，所以每个页面 4 个键都可用。**K3+K4 同时按 = 强制切 BLE 输出**（`&out OUT_BLE`）；**K1+K4 同时按 = 清配对**（`BT_SEL 0` + `BT_CLR`，B27 新增）。
+只有 4 个物理键，**不加第 5 个键**：用 `zmk,combos` 把 **K1+K2 同时按** 当作逻辑功能键（`&to 1` → Menu 页）。松开后页面保持，所以每个页面 4 个键都可用。**当前只有一个 combo（K1+K2）**——B26/B27 曾加的 K3+K4（切 BLE）和 K1+K4（清配对）已在 B29 移除。
+
+> **为什么移除那两个 combo（B29 关键修复）**：你的日常主层是 K1=Ctrl+C、K4=Alt+Tab。切换窗口时习惯「Ctrl+C 后紧接 Alt+Tab」，两个键在 combo 的 100 ms 窗口内会被判成 **K1+K4 = 清配对**，bond 被反复清掉，表现就是"蓝牙连上就断 / 连不上"。同理 K3+K4（Ctrl+D→Alt+Tab）会误触发 `OUT_BLE` 把正在用的 USB 输出切走 → 键盘无响应。B24 只有 K1+K2 一个 combo，从无此问题，故回退。
 
 | 层 | 页面 | K1 左上 | K2 右上 | K3 左下 | K4 右下 |
 |---|---|---|---|---|---|
@@ -35,13 +36,12 @@
 | 2 | **Num** | 1 | 2 | 3 | → Home |
 | 3 | **Media** | Vol− | Vol+ | Mute | → Home |
 | 4 | **Sys** | BLE 配置 0 | BLE 配置 1 | → Fn | → Home |
-| 5 | **Fn** | 解锁 Studio | 清除配对 | USB 输出 | → Home |
+| 5 | **Fn** | 解锁 Studio | 清除配对 | BLE 配置 2 | → Home |
 | 6,7 | reserved | — | — | — | — |
 
-- **进菜单**：在 Default 页同时按 K1+K2（combo `timeout-ms=100`、`require-prior-idle-ms=80`）。B24/B25 曾用 30ms，短于人手同步两键的时间，经常只按出一个键 → 进不了菜单、后续整串操作失效；B26 改 100ms。
-- **强制切蓝牙**：Default 页同时按 K3+K4 = `&out OUT_BLE`（见下方"蓝牙连不上"排查）。
-- **清配对**：Default 页同时按 K1+K4 = `&bt BT_SEL 0` + `&bt BT_CLR`（B27 新增，解决 bond 残留导致的"连上马上断"，须配合主机侧删除设备记录）。
+- **进菜单**：在 Default 页同时按 K1+K2（combo `timeout-ms=100`、`require-prior-idle-ms=80`）。B24/B25 曾用 30ms，短于人手同步两键的时间，经常只按出一个键 → 进不了菜单、后续整串操作失效；B26 起改 100ms 并保留。
 - **回主页面**：任何子页面按 K4（`&to 0`）。
+- **蓝牙操作**：走 Sys 页 `BT_SEL 0/1`（选 profile）、Fn 页 `BT_CLR`（清当前配对）、Fn 页 `BT_SEL 2`（第 3 个 profile）——都是 B24 原样，没有组合键，不会误触发。
 - **Alt+Tab**：ZMK 官方宏，`&macro_press &kp LALT` → `&macro_tap &kp TAB` → `&macro_pause_for_release` → `&macro_release &kp LALT`。短按切换一次；长按 Alt 保持按下，任务切换器持续显示，**松手确认切换**。
 - 为什么不用 hold-tap 做功能键：官方 `&lt` 默认 `flavor = "tap-preferred"`（见 `app/dts/behaviors/layer_tap.dtsi`），快速「按住 K1 再点其它键」会被判成 tap；且被按住的 K1 在菜单页上无法再按，四键会少一个。combo 没有这两个问题。
 - 6、7 层为 `status = "reserved"` 空层，Studio 里可启用并自由改键。
@@ -49,11 +49,11 @@
 
 ## 3. 显示与连接
 
-### B28 自定义状态屏（128×64 单色）
+### B29 自定义状态屏（128×64 单色）
 
 ```text
 ┌────────────────────────────────────┐
-│        USB ⇄ K1+K2>MENU      +87% │  ← 顶栏 10px：中部每 1.5s 交替，右侧电量常显
+│ K1+K2>MENU ⇄ USB            +100% │  ← 顶栏 10px：左侧每 1.5s 交替（左对齐），右侧电量常显
 ├────────────────────────────────────┤
 │      C+C      │      C+V          │
 │               │                   │  ← 四象限键位，中央十字分隔
@@ -63,7 +63,7 @@
 └────────────────────────────────────┘
 ```
 
-- **顶栏交替显示**（B28）：中部每 1.5s 在「连接状态 `USB/BLE/---`」和「操作提示 `K1+K2>MENU` / `K4>HOME`」之间切换，右侧电量 `+87%` 常显。B27 三者同排时提示显示不全，交替后独占整行。层名仍不显示——看四象限键位即可判断当前页。
+- **顶栏交替显示**（B28 引入，**B29 改左对齐**）：每 1.5s 在「连接状态 `USB/BLE/---`」和「操作提示 `K1+K2>MENU` / `K4>HOME`」之间切换，右侧电量 `+100%` 常显。**B29 根因**：B28 时 banner 用 `LV_ALIGN_TOP_MID` 居中，`K1+K2>MENU` 右端延伸到约 x=94，与右上角电量 `+100%` 重叠，后画的电量 label 遮住 banner 尾部 → 看到残缺的 `K1+K4`、电量也显示不全。改为 `LV_ALIGN_TOP_LEFT`（x=2 起）后两者彻底分开。层名仍不显示——看四象限键位即可判断当前页。
 - **颜色极性**（B25 修复，保留）：overlay 的 `com-invdir` 让 LVGL `black` = 硬件点亮，代码统一走 `PIXEL_ON()/PIXEL_OFF()` 宏，避免写反导致"字全灭只剩暗纹"。
 - **省电**：默认只有文字 + 1px 十字线点亮；按下不改背景，只加 `>` 前缀。
 
@@ -79,36 +79,32 @@
 - **输出策略**：ZMK 默认 —— 插 USB 走 USB，拔掉后蓝牙兜底。蓝牙设备名 **"FourKey OLED"**。
 - **VIA 连不上是正常的**：VIA 是 QMK 专属协议，ZMK 不响应；对应方案是 [ZMK Studio](https://zmk.studio)。
 
-**⚠️ 拔掉 USB 后蓝牙连不上 / 按键全无效（B26 重点）**
+**⚠️ 蓝牙连不上 / 连上就断 —— B29 已回退到 B24 基线**
 
-根因不是蓝牙坏了，而是 ZMK 的**首选输出（preferred transport）被存进了 NVS**：
+**结论先行**：用户确认 B24 蓝牙正常。B26/B27 为"修蓝牙"做的一系列改动经证实是**回归源**，B29 全部撤销：
 
-1. `endpoints.c` 里 `preferred_transport` 默认 = USB，且每次切换都会 `settings_save_one()` 持久化；
-2. 长时间插着 USB 使用时，首选一直是 USB。拔线后 ZMK 会尝试回退到 BLE，**但前提是 BLE profile 已连接**（`is_ble_ready()`）；
-3. 如果此时 BLE 没连上主机，`get_selected_transport()` 返回 `ZMK_TRANSPORT_NONE` → **endpoint 为空 → 所有按键（包括蓝牙键本身）看起来都没效果**。这是 ZMK 的设计，不是 bug。
+| 已移除（B26/B27） | 为什么有害 |
+|---|---|
+| combo **K3+K4 = `&out OUT_BLE`** | 日常 Ctrl+D→Alt+Tab 会误触发，把正在用的 USB 输出切走 → 键盘无响应 |
+| combo **K1+K4 = `BT_SEL 0`+`BT_CLR`** | 日常 Ctrl+C→Alt+Tab 切窗口会误触发清配对，bond 被反复清掉 → 连上就断 |
+| `CONFIG_ZMK_BLE_EXPERIMENTAL_CONN=y`（禁 2M PHY） | B24 不开也正常，属无效变量 |
+| `CONFIG_BT_SMP_ALLOW_UNAUTH_OVERWRITE=y` | 同上，回退以保持与 B24 完全一致 |
 
-解决办法（任选其一）：
+现在只有 **K1+K2** 一个 combo，蓝牙操作全走层里的按键（Sys 页 `BT_SEL 0/1`、Fn 页 `BT_CLR` / `BT_SEL 2`），不会误触发。
 
-- **Default 页同时按 K3+K4** → `&out OUT_BLE`：直接把首选输出切到 BLE，ZMK 立即广播并回连已配对主机。顶栏应从 `USB` 变 `BLE` 或 `---`。这是最快的一键恢复。
-- 若 BLE 从未配对过：切到 BLE 后，用 Sys 页 `BT_SEL 0/1` 选一个**空的 profile**，电脑/手机搜索 "FourKey OLED" 配对。
-- 若之前配对过但连不上：Fn 页 `&bt BT_CLR` 清除当前 profile 的 bond，同时**在主机侧删除该设备的配对记录**，再重新配对（两侧 bond 必须一致，否则会一直 "Security failed"）。
-- **Studio 改键残留**：Studio 保存的 keymap/bond 存在 NVS，刷固件不擦除。若层行为错乱，在 Studio 里点 *Restore Stock Settings* 恢复出厂 keymap。
+**ZMK 的输出机制（仍需理解）**：
 
-> 说明：`BT_SEL 0` 只是"选择 profile 0"，它不会把输出从 USB 切到 BLE，也不会主动发起配对。所以插着 USB 时按蓝牙键看不到任何效果属于正常现象——必须先用 `&out OUT_BLE` 或拔线让 BLE 成为当前输出。
+1. `endpoints.c` 里 `preferred_transport` 默认 = USB，且会 `settings_save_one()` 持久化；长时间插 USB 后首选是 USB。
+2. 拔线后 ZMK 回退 BLE 的前提是 **BLE profile 已连接**（`is_ble_ready()`）；若没连上，`get_selected_transport()` 返回 `ZMK_TRANSPORT_NONE` → **endpoint 为空 → 所有按键看起来都没效果**。这是 ZMK 的设计，不是 bug。
+3. `BT_SEL 0` 只是"选 profile 0"，**不切输出也不主动配对**；插着 USB 时按蓝牙键看不到效果属正常。
 
-**⚠️ 蓝牙连上后几秒就断 / 反复配对失败（B27 重点）**
+**B29 下的配对步骤**：
 
-这条与上面的"首选输出残留"是两回事。ZMK 源码里断连主要来自两条路径：
-
-1. **2M PHY 链路余量不足**：B27 前 `CONFIG_BT_CTLR_PHY_2M` 默认开启。SuperMini 这类克隆板天线/射频余量有限，高速 PHY 容易在连接建立后被主机断开。ZMK 官方提供 `CONFIG_ZMK_BLE_EXPERIMENTAL_CONN=y`，其帮助文字明确写着 "improve connection stability"，实际效果是把 `BT_CTLR_PHY_2M` 改为 `n`，回到更稳的 1M PHY（四键键盘的数据量完全用不满 2M）。
-2. **NVS 里的旧 bond/profile 导致配对被拒**：`ble.c` 的 `pairing_allowed_for_current_profile()` 对"已被占用的 profile"默认返回 `Rejecting pairing request to taken profile` 并断开。这一路刷了十几个测试固件，NVS 不擦除，很容易留下旧地址。B27 开 `CONFIG_BT_SMP_ALLOW_UNAUTH_OVERWRITE=y`，允许**同一 MAC 的主机**重新配对时覆盖旧密钥（ZMK 文档给出的 bond mismatch 修复手段）。
-
-若仍出现连上就断：
-
-- **Default 页同时按 K1+K4** → 清掉 profile 0 的 bond；
-- **同时在电脑/手机侧删除 "FourKey OLED" 的蓝牙配对记录**（ZMK 官方文档明确要求两侧一致，只清一侧会一直 Security failed）；
-- 再重新搜索配对。
-- 若层行为/改键也错乱（不只是蓝牙），在 Studio 点 *Restore Stock Settings* 恢复出厂 keymap。
+1. 拔掉 USB（或让 BLE 成为当前输出）：先断开 USB 数据线，键盘会尝试回连 BLE。
+2. 电脑/手机搜索 "FourKey OLED" → 配对连接。
+3. 若从未配对过：Sys 页选一个**空 profile**（`BT_SEL 0/1`）再搜。
+4. 若之前配对过但连不上：**两侧都要清** —— Fn 页 `&bt BT_CLR` 清键盘 bond，同时**在电脑/手机侧删除 "FourKey OLED" 的配对记录**，再重新配对（两侧 bond 必须一致，否则一直 "Security failed"）。
+5. 若怀疑 NVS 深层残留（keymap/层顺序也错乱）：刷一次官方 `settings_reset` 固件清 NVS，再刷回正常固件；或在 Studio 点 *Restore Stock Settings*。
 
 **连接步骤**
 
@@ -116,7 +112,7 @@
 2. USB 数据线接电脑；**关掉串口助手等占用 COM 口的程序**。
 3. 打开 https://zmk.studio → Connect → 选 USB 串口设备。B23 起**只有一个 CDC 串口**（Studio RPC），不会选错。
 4. 解锁改键权限：Default 页 **K1+K2** → Menu 页按 **K3**（Sys）→ Sys 页按 **K3**（Fn）→ Fn 页按 **K1**（`&studio_unlock`）。改完按 K4 回主页面。
-5. 若同时连着 USB 和 BLE，Studio 走 USB 时也要让键盘输出走 USB（`&out OUT_USB`），否则可能连不上。
+5. Studio RPC 走独立 CDC 串口，与当前输出（USB/BLE）无关；只要 USB 线接着就能连。B29 已移除 `&out OUT_USB` / `&out OUT_BLE` 组合键，不要再用组合键切输出。
 
 > ⚠️ Studio 保存过改键后，重刷固件里的 keymap 不会覆盖，需在 Studio 里点 *Restore Stock Settings*。
 > ⚠️ combo 是 devicetree 定义，Studio 改不了；在 Studio 里改了 Default 层 K1/K2 也不会影响「K1+K2 打开菜单」。
@@ -218,7 +214,8 @@ CONFIG_LV_Z_BITS_PER_PIXEL=1
 | 屏型 | 试 SH1106 驱动后黑屏 | SH1106 路径用 0xAD DCDC 供电，本屏只认 0x8D 充电泵 → 屏是 SSD1306/SSD1315 家族，非 SH1106（B18/B19） |
 | Studio | `Failed to connect to the chosen device` | B12 二分时移除 snippet + `ZMK_STUDIO` 后未恢复；且缺 `zmk,physical-layout` chosen、双 CDC 串口易选错。B23 全部补齐 |
 | 蓝牙 | 搜不到设备 | 缺 `Kconfig.defconfig` 里的 `ZMK_KEYBOARD_NAME` → 广播名为空。补 "FourKey OLED" |
-| 蓝牙 | 连上几秒就断、反复配对失败 | 2M PHY 在克隆板链路余量不足 + NVS 旧 bond/profile 让 ZMK 拒绝新配对。B27 开 `ZMK_BLE_EXPERIMENTAL_CONN`（禁 2M PHY）+ `BT_SMP_ALLOW_UNAUTH_OVERWRITE`，并加 K1+K4 清配对 combo |
+| 蓝牙 | 连上几秒就断、反复配对失败 | **B29 根因**：B27 的 K1+K4 清配对 combo 被日常 Ctrl+C→Alt+Tab 误触发，bond 反复被清。B29 移除该 combo 及两个 BLE 实验开关，回退到 B24 基线（用户确认正常）。B26/B27 的 2M PHY / bond 覆盖分析属误判 |
+| 显示 | 顶栏 `K1+K4` 残缺、`+100%` 显示不全 | B28 banner 用 `TOP_MID` 居中与右侧电量重叠；B29 改 `TOP_LEFT` 左对齐（x=2 起）|
 | 键位 | 阵列不对 | 固件配 D8/D5/D7/D6，实物是 D9/D6/D8/D7，K1 的 P1.06 根本没被扫描 |
 
 **B24 新增排查点**：屏全黑先看 `CMakeLists.txt`（自定义屏没编进去会报 `No status screen provided`）；卡片标签显示成原始行为名，说明 ZMK 该 behavior 的设备名不在 `render_binding()` 的映射表里 —— 补一条即可，不影响功能。
@@ -229,8 +226,8 @@ CONFIG_LV_Z_BITS_PER_PIXEL=1
 
 - [x] **更好看的界面**（B24 已实现）：混合布局（顶栏状态 + 2×2 键位卡片 + 底部提示），自定义状态屏走官方 nice_view 路径。
 - [x] **电量百分比**（B22 内置 widget → B24 自定义屏直接取 `zmk_battery_state_of_charge()`）。
-- [ ] **B27 上板实测**：蓝牙是否不再秒断、10px 顶栏清晰度、K1+K4 清配对后能否重新配对。
-- [ ] **B24 上板实测**：K1+K2 combo 手感/误触发率、2×2 卡片可读性、按下反白、停留子页面时的熄屏唤醒。
+- [ ] **B29 上板实测（当前）**：蓝牙是否恢复 B24 的正常连接（配对后不再秒断）；顶栏左对齐后 `K1+K2>MENU` 与 `+100%` 是否都显示完整、无残缺。
+- [ ] combo 误触发复查：日常 Ctrl+C→Alt+Tab 是否还会误入菜单（K1+K2 只剩这一个 combo，理论上不会清配对了）。
 - [ ] **Studio 在线改键实测**：改一个键后确认卡片 200 ms 内变化；改层名/重排层后确认顶栏与 `->XXX` 标签跟随。
 - [ ] 若 Studio 里新建了 `&to`/`&bt` 之外的 behavior，视需要在 `custom_status_screen.c` 的 `render_binding()` 补短标签映射。
 - [ ] 确认电池百分比读数与实际电压的偏差（日志实测 VDDH 4460 mV → 100%），必要时覆盖板级 vbatt 分压定义。

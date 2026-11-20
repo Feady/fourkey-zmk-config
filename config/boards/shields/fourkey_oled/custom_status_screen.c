@@ -15,7 +15,7 @@
  *
  * 参考 ZMK 官方实现：
  *   app/src/display/main.c                    (weak zmk_display_status_screen)
- *   app/src/display/widgets/*                 (ZMK_DISPLAY_WIDGET_LISTENER 线程模型)
+ *   app/src/display/widgets/                  (ZMK_DISPLAY_WIDGET_LISTENER 线程模型)
  *   app/boards/shields/nice_view/             (自定义屏 CMake / Kconfig 范例)
  *   englmaxi/zmk-dongle-display              (显式 lv_style + 8px 字体范例)
  */
